@@ -8,7 +8,7 @@ class HexEnv:
     SIZE = 5
     WIN_REWARD = 5
     LOSS_PENALTY = -5
-    OBSERVATION_SPACE_VALUES = (SIZE, SIZE, 2)
+    OBSERVATION_SPACE_VALUES = (SIZE, SIZE, 3)
     ACTION_SPACE_SIZE = SIZE*SIZE
     
     def __init__(self):
@@ -33,17 +33,20 @@ class HexEnv:
         return self.getObservation(player), self.turn_penalty, False
 
     def getObservation(self, player):
-        swap_available = 1.0 if player == 2 and self.hex.swap and not self.hex.first_turn else 0.0
-        swap_flag = np.array([swap_available])
+        swap_channel = np.zeros((self.SIZE, self.SIZE))
 
+        # The swap is only available for player 2, on their first move
+        # self.hex.swap is True and self.hex.first_turn is False
+        if player == 2 and self.hex.swap and not self.hex.first_turn:
+            if self.hex.first_move_pos is not None:
+                i, j = self.hex.first_move_pos
+                swap_channel[i, j] = 1
         
         # Return the observation, transposed if player 2 for consistency.
         if player == 1:
-            board_state = np.stack([self.hex.p1Board, self.hex.p2Board], axis=-1)
+            return np.stack([self.hex.p1Board, self.hex.p2Board, swap_channel], axis=-1)
         else:
-            board_state = np.stack([self.hex.p2Board.T, self.hex.p1Board.T], axis=-1)
-        return [board_state, swap_flag]
-
+            return np.stack([self.hex.p2Board.T, self.hex.p1Board.T, swap_channel.T], axis=-1)
     def resetRand(self, render=False):
         if render:
             self.close()
