@@ -14,3 +14,7 @@ HexDQNDriver.pyperf
 HexDQNDriver1.pyperf
 HexDQNDriver2.pyperf
 /Hex/.vs
+Hex/DQNDir/__pycache__/DQN.cpython-312.pyc
+Hex/DQNDir/__pycache__/DQNgame.cpython-312.pyc
+Hex/DQNDir/__pycache__/HexEnv.cpython-312.pyc
+Hex/DQNDir/__pycache__/TB.cpython-312.pyc
