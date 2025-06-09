@@ -98,15 +98,15 @@ class Hex_Game:
             if 0 <= ni < self.BOARD_SIZE and 0 <= nj < self.BOARD_SIZE and self.board[ni, nj] == neighbor_val:
                 self._union(parent, rank, idx, ni * self.BOARD_SIZE + nj)
 
-    def placeMove(self, pos, player):
+    def placeMove(self, pos, player, is_swap_action=False):
         """
         Places a stone for a player, handling the special cases for the first two moves
         (including the custom swap rule) and all subsequent moves.
         """
-        i, j = pos
-
+        
         # --- Handle Player 1's First Move ---
         if player == 1 and self.swap and self.first_turn:
+            i,j = pos
             self.board[i, j] = 1
             self.p1Board[i, j] = 1
             self._perform_union(pos, 1)
@@ -118,8 +118,8 @@ class Hex_Game:
         if player == 2 and self.swap and not self.first_turn:
             self.swap = False  # Swap opportunity is now used/declined
 
-            # Case A: P2 swaps by playing on P1's first move position
-            if pos == self.first_move_pos:
+            # Case A: P2 swaps using the dedicated swap action
+            if is_swap_action:
                 swapped_pos = (self.first_move_pos[1], self.first_move_pos[0])
                 self._undo_p1_first_move() # Call the new helper method
 
@@ -132,7 +132,7 @@ class Hex_Game:
                 self._perform_union(swapped_pos, 2)
                 return
 
-            # Case B: P2 declines to swap
+            # Case B: P2 declines to swap by placing a piece elsewhere
             else:
                 if self.first_move_pos in self.actionspace:
                     self.actionspace.remove(self.first_move_pos)
@@ -142,6 +142,7 @@ class Hex_Game:
         if pos not in self.actionspace:
             return # Ignore illegal move
             
+        i, j = pos
         self.board[i, j] = player
         if player == 1: self.p1Board[i, j] = 1
         else: self.p2Board[i, j] = 1

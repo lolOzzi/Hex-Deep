@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5venus2l_____4.75max____0.65avg___-0.70min__1749384457.keras"  # Player 1 Model
-MODEL_2_PATH = "models/5x5venus2l_____4.75max____0.65avg___-0.70min__1749384457.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras"  # Player 1 Model
+MODEL_2_PATH =  "models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
@@ -91,6 +91,7 @@ def run_ai_vs_ai_match(model_path_1, model_path_2):
         action = max(valid_q_values, key=valid_q_values.get)
         
         row, col = divmod(action, env.SIZE)
+        print("debug: ", row, col)
         move = (col, row) if player_num == 2 else (row, col) #
 
         print(f"AI Player {player_num} chooses move: {move}")

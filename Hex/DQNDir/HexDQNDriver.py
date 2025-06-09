@@ -10,7 +10,7 @@ print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
 
-#model_file = 'models/4lconv128b____-2.00max___-5.99avg___-9.00min__1749285701.keras'
+#model_file = 'models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras'
 model_file = None
 if model_file:
     agent.model.load_weights(model_file)
@@ -24,11 +24,11 @@ MIN_REWARD = -5 - (SIZE*SIZE // 2)
 
 # Environment settings
 EPISODES = 20_000
-SELF_PLAY_START_EPISODE = 1000
-MOVE_PENALTY_DECAY_EPISODE = 1000
+SELF_PLAY_START_EPISODE = 200
+MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = -0.1
-MOVE_PENALTY_DECAY_VALUE = -0.05
-
+#MOVE_PENALTY_DECAY_VALUE = -0.05
+MOVE_PENALTY_DECAY_VALUE = 0
 # Exploration settings
 epsilon = 1  # not a constant, going to be decayed
 EPSILON_DECAY = 0.99975
@@ -68,115 +68,90 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                        else MOVE_PENALTY_DECAY_VALUE
 
     while not done:
+        player = env.player_num
+        all_q_values = agent.get_qs(current_state)
+
+        # --- Get all valid actions for the current player ---
+        # Get valid placement actions (as flat indices)
+        if player == 1:
+            # For P1, the mapping is direct: (row, col) -> row * SIZE + col
+            valid_flat_actions = {i * env.SIZE + j for (i, j) in env.hex.actionspace}
+        else: # player == 2
+            # For P2, board is transposed, so map (row, col) -> col * SIZE + row
+            valid_flat_actions = {j * env.SIZE + i for (i, j) in env.hex.actionspace}
+        
+        # Add swap action if it's available for Player 2
+        if player == 2 and env.hex.swap and not env.hex.first_turn:
+            valid_flat_actions.add(env.SWAP_ACTION)
+        
+        # --- Exploration vs. Exploitation ---
+        if np.random.random() < epsilon:
+            action = agent.randomGen.choice(list(valid_flat_actions))
+        else:
+            # Get Q-values for valid actions and choose the best one
+            valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
+            action = max(valid_q_values, key=valid_q_values.get)
+        
+        # --- Execute action and process results ---
         if self_play:
+            new_state, reward, done = env.step(action, player)
 
-            # Agent plays as both players
-            player = env.player_num
-            all_q_values = agent.get_qs(current_state)
-
-            if (player==1):
-                valid_flat_actions = [i * env.SIZE + j for (i, j) in env.hex.actionspace]
-            else:
-                valid_flat_actions = [i * env.SIZE + j for (j, i) in env.hex.actionspace]
-            
-            # Exploration vs exploitation
-            if np.random.random() < epsilon:
-                action = agent.randomGen.choice(valid_flat_actions)
-            else:
-                valid_q_values = [(a, all_q_values[a]) for a in valid_flat_actions]
-                action = max(valid_q_values, key=lambda x: x[1])[0]
-            
-            row, col = divmod(action, SIZE)
-            
-
-            # If player 2, the board was transposed, so the action must be un-transposed
-            corrected_move = (row, col)
-            if player == 2 :
-                corrected_move = (col, row) 
-            new_state, reward, done = env.step(corrected_move, player)
-
-
-            #Store moves for later
+            # Store state/action for potential loser punishment
             last_state_by_player[player]  = current_state
             last_action_by_player[player] = action
-            current_state = new_state
-
 
             if player == 1:  
                 episode_reward += reward
             else:
                 episode_reward2 += reward
-            # Store transition and train
+
+            
+            
             agent.update_replay_memory((current_state, action, reward, new_state, done))
             agent.train(done, step)
 
-            # Punish the loser
+            # If the game ended, punish the loser
             if done:
-                # 2) now figure out who the loser is
+                # Now identify the loser and inject a terminal loss for their last move.
                 loser = 3 - player
-
-                # you need to know what the loser’s *last* action & state were…
-                # so earlier in the loop you should have kept track of:
-                #     last_state_by_player = {1: None, 2: None}
-                #     last_action_by_player = {1: None, 2: None}
-                #
-                # and updated them immediately after each env.step call:
-                #     last_state_by_player[player]  = current_state
-                #     last_action_by_player[player] = action
-
-                loser_state  = last_state_by_player[loser]
-                loser_action = last_action_by_player[loser]
-
-                # 3) inject a “terminal loss” for that losing side
-                agent.update_replay_memory(
-                    (loser_state,
-                    loser_action,
-                    env.LOSS_PENALTY,    # explicit negative terminal reward
-                    new_state,           # terminal observation (could be same for both)
-                    True)                # done=True
-                )
-                agent.train(True, step)  # train on that transition, too
-                break
-
+                if last_state_by_player[loser] is not None:
+                    loser_state  = last_state_by_player[loser]
+                    loser_action = last_action_by_player[loser]
+                    agent.update_replay_memory(
+                        (loser_state, loser_action, env.LOSS_PENALTY, new_state, True)
+                    )
+                    agent.train(True, step)
             
-            # Switch player and update state
-            current_state = env.getObservation(3 - player)  # Switch to other player (1 -> 2, 2 -> 1)
+            # Switch player and update state for the next turn
             env.player_num = 3 - player
+            current_state = env.getObservation(env.player_num)
             step += 1
-        else:
-            # Play against random opponent
-            all_q_values = agent.get_qs(current_state)
-            if (env.player_num==1):
-                valid_flat_actions = [i * env.SIZE + j for (i, j) in env.hex.actionspace]
-            else:
-                valid_flat_actions = [i * env.SIZE + j for (j, i) in env.hex.actionspace]
-            
-            if np.random.random() < epsilon:
-                action = agent.randomGen.choice(valid_flat_actions)
-            else:
-                valid_q_values = [(a, all_q_values[a]) for a in valid_flat_actions]
-                action = max(valid_q_values, key=lambda x: x[1])[0]
-            
-            row, col = divmod(action, SIZE)
-            corrected_move = (row, col)
-            if env.player_num == 2 :
-                corrected_move = (col, row) 
-            new_state, reward, done = env.step(corrected_move, env.player_num)
+
+        else: # Play against a random opponent
+            # Agent's move
+            new_state, reward, done = env.step(action, env.player_num)
             episode_reward += reward
-            episode_reward2 += reward
             
-            if not done:
-                # Random opponent's move
-                opponent_action = env.calc_op_move()
-                env.hex.placeMove(opponent_action, 3 - env.player_num)
+            if done: # Agent won 
+                agent.update_replay_memory((current_state, action, reward, new_state, done))
+                agent.train(done, step)
+                current_state = new_state
+            else: # Game continues, random opponent's turn
+                opponent_action_pos = env.calc_op_move()
+                # We need to get the resulting state after the opponent moves
+                env.hex.placeMove(opponent_action_pos, 3 - env.player_num)
                 if env.hex.checkWin(3 - env.player_num):
                     done = True
-                    reward = env.LOSS_PENALTY
-            
-            agent.update_replay_memory((current_state, action, reward, new_state, done))
-            agent.train(done, step)
-            current_state = new_state
+                    reward = env.LOSS_PENALTY # Agent lost
+                
+                # The 'new_state' for the agent's transition is after the opponent has moved
+                final_state = env.getObservation(env.player_num)
+                agent.update_replay_memory((current_state, action, reward, final_state, done))
+                agent.train(done, step)
+                current_state = final_state
+
             step += 1
+
 
     
      # Append episode reward to a list and log stats (every given number of episodes)

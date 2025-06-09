@@ -15,7 +15,7 @@ from PIL import Image
 import cv2
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5tellus2l"
+MODEL_NAME = "5x5-tellus-s-3l"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
@@ -60,8 +60,8 @@ class DQNAgent:
         
         # Optional: One more layer for pattern combinations
         # Only if you see improvement in training
-        # x = Conv2D(256, kernel_size=3, padding='same', activation='relu',
-        #            name='pattern_combinations')(x)
+        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
+                    name='pattern_combinations')(x)
         
         # Flatten for decision making
         x_flat = Flatten()(x)
@@ -76,7 +76,7 @@ class DQNAgent:
         d = Dense(128, activation='relu', name='decision_layer_2')(d)
         
         # Output layer: Q-values for each position
-        outputs = Dense(self.env.SIZE*self.env.SIZE, activation='linear', name='q_values')(d)
+        outputs = Dense(self.env.ACTION_SPACE_SIZE, activation='linear', name='q_values')(d)
 
         ''' Hex 11x11?
         # Convolutional trunk
