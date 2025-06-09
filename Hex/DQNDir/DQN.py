@@ -15,7 +15,7 @@ from PIL import Image
 import cv2
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-tellus-s-3l"
+MODEL_NAME = "5x5-tellus-s-c+d-3l"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
