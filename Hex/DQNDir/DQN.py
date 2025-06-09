@@ -22,7 +22,7 @@ MINIBATCH_SIZE = 128
 DISCOUNT = 0.99
 UPDATE_TARGET_EVERY = 5
 class DQNAgent:
-    def __init__(self, env):
+    def __init__(self, env, train=True):
         self.env = env
 
         configure_rtx5070ti()
@@ -32,8 +32,9 @@ class DQNAgent:
         self.target_model = self.create_model()
         self.target_model.set_weights(self.model.get_weights())
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
-        self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
-        self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
+        if train:
+            self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
+            self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
         self.target_update_counter = 0
         self.randomGen = np.random.default_rng(1)
 
