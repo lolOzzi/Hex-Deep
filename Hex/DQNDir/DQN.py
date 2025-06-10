@@ -41,8 +41,8 @@ class DQNAgent:
 
     def create_model(self):
         # --- Input Layers ---
-        # Input for the 5x5 board state (2 channels: player pieces, opponent pieces)
-        board_input = Input(shape=(self.env.SIZE, self.env.SIZE, 2), name='board_input')
+        # Input for the 5x5 board state (3 channels: player pieces, opponent pieces, swappable piece)
+        board_input = Input(shape=(self.env.SIZE, self.env.SIZE, 3), name='board_input')
         
         # Input for the single swap-availability flag
         swap_input = Input(shape=(1,), name='swap_input')
@@ -50,7 +50,7 @@ class DQNAgent:
 
         # Layer 1: Local pattern detection (3x3 receptive field)
         # 64 filters to capture various local Hex patterns
-        x = Conv2D(64, kernel_size=3, padding='same', activation='relu',
+        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
                 name='local_patterns')(board_input)
         
         # Layer 2: Global pattern detection (5x5 receptive field = full board)
@@ -99,7 +99,7 @@ class DQNAgent:
     @tf.function(
         input_signature=[
             [
-                tf.TensorSpec(shape=(5, 5, 2), dtype=tf.float32),
+                tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32),
                 tf.TensorSpec(shape=(1,), dtype=tf.float32)
             ]
         ]
