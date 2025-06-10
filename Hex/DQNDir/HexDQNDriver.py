@@ -10,8 +10,8 @@ print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
 
-#model_file = 'models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras'
-model_file = None
+model_file = 'models/5x5-tellus-s-c+d-3l_____5.00max____3.40avg____0.00min__1749550630.keras'
+#model_file = None
 if model_file:
     agent.model.load_weights(model_file)
     agent.target_model.set_weights(agent.model.get_weights())
@@ -24,10 +24,10 @@ SIZE = 5
 
 # Environment settings
 EPISODES = 20_000
-SELF_PLAY_START_EPISODE = 1000
-MOVE_PENALTY_DECAY_EPISODE = 1000
+SELF_PLAY_START_EPISODE = 0
+MOVE_PENALTY_DECAY_EPISODE = 500
 MOVE_PENALTY_BASE_VALUE = -0.05
-MOVE_PENALTY_DECAY_VALUE = -0.01
+MOVE_PENALTY_DECAY_VALUE = 0
 #MOVE_PENALTY_DECAY_VALUE = 0
 
 MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE
@@ -95,6 +95,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
             valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
             action = max(valid_q_values, key=valid_q_values.get)
         
+        otherPlayer_state = env.getObservation(3 - player)
         # --- Execute action and process results ---
         if self_play:
             new_state, reward, done = env.step(action, player)
@@ -121,7 +122,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                     loser_state  = last_state_by_player[loser]
                     loser_action = last_action_by_player[loser]
                     agent.update_replay_memory(
-                        (loser_state, loser_action, env.LOSS_PENALTY, new_state, True)
+                        (loser_state, loser_action, env.LOSS_PENALTY, otherPlayer_state, True)
                     )
                     agent.train(True, step)
             
@@ -143,13 +144,15 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 opponent_action_pos = env.calc_op_move()
                 # We need to get the resulting state after the opponent moves
                 env.hex.placeMove(opponent_action_pos, 3 - env.player_num)
+                final_state = env.getObservation(env.player_num)
                 if env.hex.checkWin(3 - env.player_num):
                     done = True
                     reward = env.LOSS_PENALTY # Agent lost
-                
+                    agent.update_replay_memory((current_state, action, reward, new_state, True))
+                else:
+                    agent.update_replay_memory((current_state, action, reward, final_state, False))
                 # The 'new_state' for the agent's transition is after the opponent has moved
-                final_state = env.getObservation(env.player_num)
-                agent.update_replay_memory((current_state, action, reward, final_state, done))
+
                 agent.train(done, step)
                 current_state = final_state
 

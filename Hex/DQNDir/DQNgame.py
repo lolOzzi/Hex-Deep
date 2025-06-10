@@ -112,6 +112,7 @@ class Hex_Game:
             self._perform_union(pos, 1)
             self.first_move_pos = pos
             self.first_turn = False
+            self.actionspace.remove(pos)
             return
 
         # --- Handle Player 2's First Move (Swap Decision) ---
@@ -122,21 +123,17 @@ class Hex_Game:
             if is_swap_action:
                 swapped_pos = (self.first_move_pos[1], self.first_move_pos[0])
                 self._undo_p1_first_move() # Call the new helper method
-
+                self.actionspace.add(self.first_move_pos)
                 # Place P2's piece at the new swapped position
                 self.board[swapped_pos[0], swapped_pos[1]] = 2
                 self.p2Board[swapped_pos[0], swapped_pos[1]] = 1
-                if swapped_pos in self.actionspace:
-                    self.actionspace.remove(swapped_pos)
-                    self.posMoves -= 1
+                self.actionspace.remove(swapped_pos)    
+                self.posMoves -= 1
                 self._perform_union(swapped_pos, 2)
                 return
 
             # Case B: P2 declines to swap by placing a piece elsewhere
-            else:
-                if self.first_move_pos in self.actionspace:
-                    self.actionspace.remove(self.first_move_pos)
-                    self.posMoves -= 1
+
         
         # --- Generic move placement for all other turns ---
         if pos not in self.actionspace:

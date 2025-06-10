@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras"  # Player 1 Model
-MODEL_2_PATH =  "models/5x5tellus2l_____4.75max____2.19avg___-0.65min__1749460707.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5-tellus-s-c+d-3l_____5.00max____0.20avg____0.00min__1749547378.keras"  # Player 1 Model
+MODEL_2_PATH =  "models/5x5-tellus-s-c+d-3l_____5.00max____3.40avg____0.00min__1749550630.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
@@ -95,7 +95,7 @@ def run_ai_vs_ai_match(model_path_1, model_path_2):
         move = (col, row) if player_num == 2 else (row, col) #
 
         print(f"AI Player {player_num} chooses move: {move}")
-        _, _, done = env.step(move, player_num) #
+        _, _, done = env.step(action, player_num) #
 
         if SHOW_BOARD_VISUALIZATION: env.render()
         time.sleep(1)
@@ -130,29 +130,36 @@ def run_human_vs_ai_match(ai_model_path, human_player_num):
     if SHOW_BOARD_VISUALIZATION: env.render()
 
     while not done:
-        player_num = env.player_num #
-        move = None
+               # ... inside run_human_vs_ai_match ...
+        player_num = env.player_num 
+        action = None # Use a single 'action' variable
 
         if player_num == human_player_num:
             print(f"\nYour turn (Player {player_num}).")
-            move = get_human_move(env)
+            move_tuple = get_human_move(env)
+            # Convert the human's (row, col) tuple to a flat integer action
+            action = move_tuple[0] * env.SIZE + move_tuple[1]
         else:
             print(f"\nAI's turn (Player {ai_player_num})...")
-            all_q_values = ai_agent.get_qs(current_state) #
-            if (player_num==1):
-                valid_flat_actions = [i * env.SIZE + j for (i, j) in env.hex.actionspace]
-            else:
-                valid_flat_actions = [i * env.SIZE + j for (j, i) in env.hex.actionspace]
-            valid_q_values = {action: all_q_values[action] for action in valid_flat_actions}
-            action = max(valid_q_values, key=valid_q_values.get)
-            row, col = divmod(action, env.SIZE)
+            all_q_values = ai_agent.get_qs(current_state) 
             
-            # Un-transpose move if AI is player 2
-            move = (col, row) if ai_player_num == 2 else (row, col) #
-            print(f"AI (Player {ai_player_num}) chooses move: {move}")
+            # Get valid actions based on the current player
+            if player_num == 1:
+                valid_flat_actions = {i * env.SIZE + j for (i, j) in env.hex.actionspace}
+            else: # player == 2
+                valid_flat_actions = {j * env.SIZE + i for (i, j) in env.hex.actionspace}
+
+            valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
+            action = max(valid_q_values, key=valid_q_values.get)
+            
+            # For display purposes, convert AI action back to a tuple
+            row, col = divmod(action, env.SIZE)
+            move_display = (col, row) if player_num == 2 else (row, col)
+            print(f"AI (Player {ai_player_num}) chooses move: {move_display}")
             time.sleep(1)
 
-        _, _, done = env.step(move, player_num) #
+        # Always call env.step with the integer 'action'
+        _, _, done = env.step(action, player_num)
 
         if SHOW_BOARD_VISUALIZATION: env.render()
 
