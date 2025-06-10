@@ -6,10 +6,12 @@ import time
 import random
 from tqdm import tqdm
 
+
 print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
 
+'''
 #model_file = 'models/5x5-tellus-s-c+d-3l_____5.00max____3.40avg____0.00min__1749550630.keras'
 model_file = None
 if model_file:
@@ -18,8 +20,9 @@ if model_file:
     print("Model loaded")
 else:
     print("No modelfile found")
-
+'''
 SIZE = 5
+
 
 
 # Environment settings

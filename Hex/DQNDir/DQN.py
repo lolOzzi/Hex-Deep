@@ -1,6 +1,6 @@
 import time
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Conv2D, MaxPooling2D, Activation, Flatten, Concatenate
+from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate
 from keras.optimizers import Adam
 import numpy as np
 from collections import deque
@@ -15,7 +15,7 @@ from PIL import Image
 import cv2
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-tellus-s-c+d-3l"
+MODEL_NAME = "5x5-mars-s-c+d-res"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
@@ -38,59 +38,87 @@ class DQNAgent:
         self.randomGen = np.random.default_rng(1)
 
     
+    def residual_block(self, x, filters):
+        """
+        Defines a single residual block with two convolutional layers and a skip connection.
+        This structure helps in training deeper networks by mitigating vanishing gradients.
+
+        Args:
+            x: The input tensor to the block.
+            filters (int): The number of filters for the convolutional layers.
+
+        Returns:
+            The output tensor of the residual block.
+        """
+        # Store the input tensor for the skip connection 
+        shortcut = x
+
+        # First convolutional path
+        y = Conv2D(filters, kernel_size=(3, 3), padding='same')(x)
+        y = BatchNormalization()(y)
+        y = ReLU()(y)
+
+        # Second convolutional path
+        y = Conv2D(filters, kernel_size=(3, 3), padding='same')(y)
+        y = BatchNormalization()(y)
+
+        # Add the shortcut to the output of the convolutional paths 
+        y = Add()([shortcut, y])
+        # Final activation after the addition
+        y = ReLU()(y)
+
+        return y
 
     def create_model(self):
-        # --- Input Layers ---
-        # Input for the 5x5 board state (3 channels: player pieces, opponent pieces, swappable piece)
-        board_input = Input(shape=(self.env.SIZE, self.env.SIZE, 3), name='board_input')
+        """
+        Creates the Deep Q-Network (DQN) model for a 5x5 Hex board.
+        The architecture is a deep residual network inspired by AlphaZero.
+
+        Returns:
+            A TensorFlow/Keras model.
+        """
+            # --- Input Layer ---
+        # The input is a 5x5 board with 3 channels: player's stones, opponent's stones,
+        # and a channel indicating the location of P1's first move for a potential swap.
+        board_input = Input(shape=(5, 5, 3), name='board_input')
         
-        # Input for the single swap-availability flag
+        # A separate input for a single flag (1.0 or 0.0) indicating if the swap is available.
         swap_input = Input(shape=(1,), name='swap_input')
-        '''5x5 Venus''' 
 
-        # Layer 1: Local pattern detection (3x3 receptive field)
-        # 64 filters to capture various local Hex patterns
-        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
-                name='local_patterns')(board_input)
-        
-        # Layer 2: Global pattern detection (5x5 receptive field = full board)
-        # 128 filters to capture board-wide strategic patterns
-        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
-                name='global_patterns')(x)
-        
-        # Optional: One more layer for pattern combinations
-        # Only if you see improvement in training
-        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
-                    name='pattern_combinations')(x)
-        
-        # Flatten for decision making
-        x_flat = Flatten()(x)
+        # --- Convolutional Body ---
+        # This shared body processes the spatial information of the board.
+        x = Conv2D(filters=128, kernel_size=(3, 3), padding='same')(board_input)
+        x = BatchNormalization()(x)
+        x = ReLU()(x)
 
-        # --- Concatenation ---
-        # Merge the flattened board features with the swap flag
-        concatenated = Concatenate()([x_flat, swap_input])
-        
-        # Decision layers
-        d = Dense(256, activation='relu', name='decision_layer_1')(concatenated)
-        d = Dropout(0.2)(d)  # Prevent overfitting
-        d = Dense(128, activation='relu', name='decision_layer_2')(d)
-        
-        # Output layer: Q-values for each position
-        outputs = Dense(self.env.ACTION_SPACE_SIZE, activation='linear', name='q_values')(d)
+        # 4 residual blocks to learn deep features.
+        for _ in range(4):
+            x = self.residual_block(x, filters=128)
 
-        ''' Hex 11x11?
-        # Convolutional trunk
-        x = Conv2D(32, kernel_size=3, padding='same', activation='relu')(inputs)
-        x = Conv2D(64, kernel_size=3, padding='same', activation='relu')(x)
-        x = Conv2D(64, kernel_size=3, padding='same', activation='relu')(x)
-        x = Conv2D(64, kernel_size=3, padding='same', activation='relu')(x)
-        # Flatten and fully-connected head
-        x = Flatten()(x)
-        x = Dense(512, activation='relu')(x)
-        outputs = Dense(self.env.ACTION_SPACE_SIZE, activation='linear')(x)
-        '''
-        model = Model(inputs=[board_input, swap_input], outputs=outputs, name='hex_dqn')
+        # --- Head 1: Q-Values for Board Moves ---
+        # This head outputs the Q-values for placing a piece on any of the 25 cells.
+        board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
+                            activation='linear', name='board_q_values')(x)
+        # Flatten the (5, 5, 1) output to (25,) to represent Q-values for each cell.
+        board_q_flat = Flatten(name='board_q_flat')(board_q_head)
+
+        # --- Head 2: Q-Value for the Swap Action ---
+        # This head determines the Q-value of performing the swap.
+        # It uses the flattened features from the convolutional body and the swap availability flag.
+        swap_head_features = Flatten()(x)
+        swap_head_features = Concatenate()([swap_head_features, swap_input])
+        swap_head = Dense(128, activation='relu')(swap_head_features)
+        swap_q_value = Dense(1, activation='linear', name='swap_q_value')(swap_head)
+
+        # --- Final Concatenation ---
+        # Combine the Q-values from both heads into a single output tensor of shape (26,).
+        # This matches the environment's action space (25 board moves + 1 swap move).
+        final_output = Concatenate(name='final_q_values')([board_q_flat, swap_q_value])
+
+        # --- Create and Compile Model ---
+        model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_swap')
         model.compile(loss="mse", optimizer=Adam(learning_rate=0.001), metrics=['accuracy'])
+        
         return model
 
     def update_replay_memory(self, transition):
