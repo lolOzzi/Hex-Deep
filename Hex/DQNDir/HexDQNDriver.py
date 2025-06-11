@@ -5,7 +5,8 @@ import tensorflow as tf
 import time
 import random
 from tqdm import tqdm
-
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'  # Add this line
 
 print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
