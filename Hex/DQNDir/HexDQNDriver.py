@@ -75,7 +75,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
 
     while not done:
         player = env.player_num
-        all_q_values = agent.get_qs(current_state)
+        all_q_values = agent.get_qs(*current_state)
 
         # --- Get all valid actions for the current player ---
         # Get valid placement actions (as flat indices)
