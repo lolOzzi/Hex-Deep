@@ -140,7 +140,8 @@ class DQNAgent:
             max_future_q = tf.reduce_max(future_q_values, axis=1)
             
             # The calculation of target_q is done in float32 for better precision
-
+            target_q = rewards + (1 - tf.cast(dones, tf.float32)) * DISCOUNT * tf.cast(max_future_q, tf.float32)
+             # The mask and predicted_q calculation remains the same
             mask = tf.one_hot(tf.cast(actions, dtype=tf.int32), self.env.ACTION_SPACE_SIZE)
             q_values = self.model(states, training=True)
             mask = tf.cast(mask, q_values.dtype)
