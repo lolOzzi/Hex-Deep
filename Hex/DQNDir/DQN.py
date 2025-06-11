@@ -22,7 +22,6 @@ MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
 DISCOUNT = 0.99
 UPDATE_TARGET_EVERY = 5
-
 class GINConv(tf.keras.layers.Layer):
     """Graph Isomorphism Network (GIN) layer."""
     def __init__(self, hidden_units, **kwargs):
@@ -34,6 +33,9 @@ class GINConv(tf.keras.layers.Layer):
         ])
 
     def call(self, node_features, adjacency_matrix):
+        # Cast adjacency_matrix to match the dtype of node_features
+        adjacency_matrix = tf.cast(adjacency_matrix, dtype=node_features.dtype)
+        
         aggregated_features = tf.matmul(adjacency_matrix, node_features)
         combined_features = aggregated_features + node_features
         return self.mlp(combined_features)
