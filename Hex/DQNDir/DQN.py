@@ -1,7 +1,10 @@
+# DQN.py
+
 import time
-from keras.models import Sequential, Model
-from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
-from keras.optimizers import Adam
+# Corrected imports: Changed from 'keras' to 'tensorflow.keras'
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
+from tensorflow.keras.optimizers import Adam
 import numpy as np
 from collections import deque
 from TB import ModifiedTensorBoard
@@ -9,6 +12,8 @@ import random
 from HexEnv import *
 import tensorflow as tf
 import os
+
+# ... rest of the file remains the same
 
 REPLAY_MEMORY_SIZE = 50_000
 MODEL_NAME = "5x5-Hybrid-GNN-ConvNet-SwapFlag" # Updated Model Name
