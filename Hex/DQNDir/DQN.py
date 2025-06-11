@@ -83,7 +83,7 @@ def create_hybrid_gnn_convnet_model(board_size=5):
 
     # Create and compile the model with four inputs
     model = Model(inputs=[conv_input, node_input, adj_input, swap_flag_input], outputs=output_q_values)
-    model.compile(optimizer=Adam(learning_rate=0.001), loss=MeanSquaredError())
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), loss=MeanSquaredError())
     return model
 
 
@@ -161,21 +161,20 @@ class DQNAgent:
             action_indices = tf.stack([tf.range(tf.shape(actions)[0], dtype=tf.int32), actions], axis=1)
             predicted_q_values = tf.gather_nd(all_q_values, action_indices)
             # THE FIX: Check if the optimizer is wrapped for mixed precision
-            is_mixed_precision = hasattr(self.model.optimizer, 'get_scaled_loss')
 
             # Calculate loss
             loss = self.model.loss(target_q_values, predicted_q_values)
-            # THE FIX: Use tf.cond for robust conditional logic in a graph
-            is_mixed_precision = isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer)
-            
-            if is_mixed_precision:
-                scaled_loss = self.model.optimizer.get_scaled_loss(loss)
-                scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
-                gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
-            else:
-                gradients = tape.gradient(loss, self.model.trainable_variables)
+            scaled_loss = self.model.optimizer.get_scaled_loss(loss)
         
+        # Calculate gradients using the scaled loss.
+        scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
+        
+        # Unscale the gradients back to their original magnitude before applying them.
+        gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
+        
+        # Apply the unscaled gradients to the model's variables.
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+
 
 
     def train(self, terminal_state, step):
