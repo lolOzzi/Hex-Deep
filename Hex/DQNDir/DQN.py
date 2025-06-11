@@ -1,6 +1,6 @@
 import time
 from keras.models import Sequential, Model
-from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input
+from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
 from keras.optimizers import Adam
 import numpy as np
 from collections import deque
@@ -52,7 +52,10 @@ def create_hybrid_gnn_convnet_model(board_size=5):
 
     gnn_layer = GINConv(128)(node_input, adj_input)
     gnn_layer = GINConv(128)(gnn_layer, adj_input)
-    graph_embedding = tf.reduce_mean(gnn_layer, axis=1)
+    
+    # --- FIX IS HERE ---
+    # Replace tf.reduce_mean with a Keras layer
+    graph_embedding = GlobalAveragePooling1D()(gnn_layer)
 
     fused_layer = Concatenate()([flat_conv_output, graph_embedding])
     dense_layer = Dense(512, activation='relu')(fused_layer)
