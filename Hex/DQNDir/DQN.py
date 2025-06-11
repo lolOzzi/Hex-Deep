@@ -15,7 +15,7 @@ from PIL import Image
 import cv2
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-mars-s-c+d-res"
+MODEL_NAME = "5x5-mars-s-c+d-res(Continued)"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
@@ -24,7 +24,8 @@ UPDATE_TARGET_EVERY = 5
 class DQNAgent:
     def __init__(self, env, train=True):
         self.env = env
-        configure_rtx5070ti()
+        if (len(tf.config.experimental.list_physical_devices('GPU')) > 0):
+            configure_gpu_optimizations()
         # Primary Model, gets trained every step
         self.model = self.create_model()
         # Target Model, we .predict this one
@@ -142,57 +143,81 @@ class DQNAgent:
             [board_state[np.newaxis, ...], swap_flag[np.newaxis, ...]], training=False
         )[0]
     
+    @tf.function(
+            input_signature=
+            (
+                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)),
+                tf.TensorSpec(shape=(), dtype=tf.int32),
+                tf.TensorSpec(shape=(), dtype=tf.float32),
+                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)),
+                tf.TensorSpec(shape=(), dtype=tf.float32)
+            )
+    )
+    def train_step(self, states, actions, rewards, next_states, dones):
+        """
+        Performs a single, highly optimized training step.
+        This function is compiled into a static graph.
+        """
+        # Unpack states, which are tuples of (board, swap_flag)
+        current_states_board, current_states_swap = states
+        new_current_states_board, new_current_states_swap = next_states
+
+        future_qs_list = self.target_model([new_current_states_board, new_current_states_swap], training=False)
+        max_future_qs = tf.reduce_max(future_qs_list, axis=1)
+        target_q_values = rewards + (1.0 - dones) * DISCOUNT * max_future_qs
+
+        with tf.GradientTape() as tape:
+            one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE)
+            q_values = self.model([current_states_board, current_states_swap], training=True)
+            predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
+            loss = self.model.loss(target_q_values, predicted_q_values)
+        
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+
     def train(self, terminal_state, step):
+        """
+        Orchestrates training using a high-performance tf.data input pipeline.
+        """
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
-        
-        sampled_indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
 
-        # Create the minibatch by retrieving the transitions using the sampled indices.
-        # This is a fast list comprehension.
-        minibatch = [self.replay_memory[i] for i in sampled_indices]
+        # Define a generator function to yield data from the replay buffer.
+        def _generator():
+            # Sample indices once to create a shuffled view of the replay memory for this epoch.
+            indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
+            for i in indices:
+                yield self.replay_memory[i]
 
-        # Deconstruct states into separate arrays for board and swap flags
-        current_states_board = np.array([transition[0][0] for transition in minibatch])
-        current_states_swap = np.array([transition[0][1] for transition in minibatch])
-
-        new_current_states_board = np.array([transition[3][0] for transition in minibatch])
-        new_current_states_swap = np.array([transition[3][1] for transition in minibatch])
-
-        # Predict Q-values in batches
-        current_qs_list = self.model.predict([current_states_board, current_states_swap], verbose=0, batch_size=MINIBATCH_SIZE)
-        future_qs_list = self.target_model.predict([new_current_states_board, new_current_states_swap], verbose=0, batch_size=MINIBATCH_SIZE)
-
-        actions = np.array([transition[1] for transition in minibatch])
-        rewards = np.array([transition[2] for transition in minibatch])
-        dones = np.array([transition[4] for transition in minibatch])
-
-        # Vectorized Bellman Equation
-        max_future_qs = np.max(future_qs_list, axis=1)
-        new_q_values = rewards + (1 - dones) * DISCOUNT * max_future_qs
-
-        # Update the Q-values for the actions taken
-        target_qs_list = current_qs_list
-        rows_to_update = np.arange(MINIBATCH_SIZE)
-        target_qs_list[rows_to_update, actions] = new_q_values
-
-        # Fit the model on the entire prepared batch
-        self.model.fit(
-            [current_states_board, current_states_swap],
-            target_qs_list,
-            batch_size=MINIBATCH_SIZE,
-            verbose=0,
-            shuffle=False
+        # Create the tf.data.Dataset.
+        # The output_signature tells tf.data the shape and type of the data, which is crucial for performance.
+        dataset = tf.data.Dataset.from_generator(
+            _generator,
+            output_signature=(
+                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)), # state
+                tf.TensorSpec(shape=(), dtype=tf.int32),                                                      # action
+                tf.TensorSpec(shape=(), dtype=tf.float32),                                                    # reward
+                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)), # next_state
+                tf.TensorSpec(shape=(), dtype=tf.float32)                                                     # done
+            )
         )
         
+        # Batch the data and prefetch the next batch.
+        # prefetch(tf.data.AUTOTUNE) lets TensorFlow figure out the optimal number of batches to preload.
+        dataset = dataset.batch(MINIBATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+
+        # Iterate over the dataset and train. This loop will typically only run once per `train` call.
+        for states, actions, rewards, next_states, dones in dataset:
+            self.train_step(states, actions, rewards, next_states, dones)
+
         if terminal_state:
             self.target_update_counter += 1
         if self.target_update_counter > UPDATE_TARGET_EVERY:
             self.target_model.set_weights(self.model.get_weights())
             self.target_update_counter = 0
 
-def configure_rtx5070ti():
-    # Enable mixed precision (RTX 5070 Ti loves this)
+def configure_gpu_optimizations():
+    # Enable mixed precision 
     policy = tf.keras.mixed_precision.Policy('mixed_float16')
     tf.keras.mixed_precision.set_global_policy(policy)
     

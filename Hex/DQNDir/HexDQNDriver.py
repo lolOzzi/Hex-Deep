@@ -11,24 +11,24 @@ print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
 
-'''
-#model_file = 'models/5x5-tellus-s-c+d-3l_____5.00max____3.40avg____0.00min__1749550630.keras'
-model_file = None
+
+model_file = 'models/5x5-mars-s-c+d-res_____5.00max____0.50avg____0.00min__1749631137.keras'
+#model_file = None
 if model_file:
     agent.model.load_weights(model_file)
     agent.target_model.set_weights(agent.model.get_weights())
     print("Model loaded")
 else:
     print("No modelfile found")
-'''
+
 SIZE = 5
 
 
 
 # Environment settings
 EPISODES = 20_000
-SELF_PLAY_START_EPISODE = 1000
-MOVE_PENALTY_DECAY_EPISODE = 500
+SELF_PLAY_START_EPISODE = 500
+MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = -0.05
 MOVE_PENALTY_DECAY_VALUE = 0
 #MOVE_PENALTY_DECAY_VALUE = 0
