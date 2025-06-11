@@ -2,7 +2,6 @@
 
 import time
 
-# Corrected imports: Changed from 'keras' to 'tensorflow.keras'
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
 from tensorflow.keras.optimizers import Adam
@@ -162,19 +161,14 @@ class DQNAgent:
             predicted_q_values = tf.gather_nd(all_q_values, action_indices)
             # THE FIX: Check if the optimizer is wrapped for mixed precision
 
-            # Calculate loss
+            # Calculate loss. The optimizer will scale this loss automatically.
             loss = self.model.loss(target_q_values, predicted_q_values)
-            scaled_loss = self.model.optimizer.get_scaled_loss(loss)
         
-        # Calculate gradients using the scaled loss.
-        scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
+        # Calculate gradients. GradientTape automatically uses the scaled loss.
+        gradients = tape.gradient(loss, self.model.trainable_variables)
         
-        # Unscale the gradients back to their original magnitude before applying them.
-        gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
-        
-        # Apply the unscaled gradients to the model's variables.
+        # Apply gradients. The optimizer automatically unscales them before applying.
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-
 
 
     def train(self, terminal_state, step):
