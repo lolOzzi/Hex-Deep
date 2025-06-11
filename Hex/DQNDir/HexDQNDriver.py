@@ -27,7 +27,7 @@ def loadModel(model_file):
 def loadPartialModel(model_file):
     agent.load_partial_weights(model_file)
 
-loadPartialModel(model_file)
+#loadPartialModel(model_file)
 
 # Environment settings
 SIZE = 5
