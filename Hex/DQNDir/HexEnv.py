@@ -78,6 +78,7 @@ class HexEnv:
             i, j = self.hex.first_move_pos
             swap_channel[i, j] = 1.0
 
+
         if player == 1:
             conv_input = np.stack([self.hex.p1Board, self.hex.p2Board, swap_channel], axis=-1)
         else: # player == 2
@@ -105,7 +106,7 @@ class HexEnv:
             return self.getObservation(self.player_num)
 
     def calc_op_move(self):
-        return random.choice(tuple(self.hex.actionspace))
+        return random.sample(list(self.hex.actionspace), 1)[0]
     
     def render(self):
         self.fig, self.ax = self.hex.draw_board(self.fig, self.ax)

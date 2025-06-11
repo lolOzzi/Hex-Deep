@@ -13,21 +13,31 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-#model_file = 'models/5x5-mars-s-c+d-res_____5.00max____0.50avg____0.00min__1749631137.keras'
+#model_file = 'models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____3.80avg____0.00min__1749681670.keras'
 model_file = None
-if model_file:
-    agent.model.load_weights(model_file)
-    agent.target_model.set_weights(agent.model.get_weights())
-    print("Model loaded")
-else:
-    print("No modelfile found")
+
+
+def loadModel(model_file):
+    if model_file:
+        agent.model.load_weights(model_file)
+        agent.target_model.set_weights(agent.model.get_weights())
+        print("Model loaded")
+    else:
+        print("No modelfile found")
+
+def loadPartialModel(model_file):
+    agent.load_partial_weights(model_file)
+
+loadModel(model_file)
+
+# Environment settings
+
 
 SIZE = 5
 
 
-
 # Environment settings
-EPISODES = 40_000
+EPISODES = 80_000
 SELF_PLAY_START_EPISODE = 500
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = -0.05
@@ -185,7 +195,3 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
     if epsilon > MIN_EPSILON:
         epsilon *= EPSILON_DECAY
         epsilon = max(MIN_EPSILON, epsilon)
-
-
-
-

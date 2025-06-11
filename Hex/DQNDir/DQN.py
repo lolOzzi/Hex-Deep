@@ -1,19 +1,25 @@
 # DQN.py
 
 import time
+
 # Corrected imports: Changed from 'keras' to 'tensorflow.keras'
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
 from tensorflow.keras.optimizers import Adam
+
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, ReLU, Add, Concatenate, BatchNormalization
+
 import numpy as np
 from collections import deque
 from TB import ModifiedTensorBoard
-import random
 from HexEnv import *
 import tensorflow as tf
 import os
+from tensorflow.keras.losses import MeanSquaredError 
 
-# ... rest of the file remains the same
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input
 
 REPLAY_MEMORY_SIZE = 50_000
 MODEL_NAME = "5x5-Hybrid-GNN-ConvNet-SwapFlag" # Updated Model Name
@@ -22,6 +28,7 @@ MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
 DISCOUNT = 0.99
 UPDATE_TARGET_EVERY = 5
+
 class GINConv(tf.keras.layers.Layer):
     """Graph Isomorphism Network (GIN) layer."""
     def __init__(self, hidden_units, **kwargs):
@@ -76,8 +83,9 @@ def create_hybrid_gnn_convnet_model(board_size=5):
 
     # Create and compile the model with four inputs
     model = Model(inputs=[conv_input, node_input, adj_input, swap_flag_input], outputs=output_q_values)
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+    model.compile(optimizer=Adam(learning_rate=0.001), loss=MeanSquaredError())
     return model
+
 
 class DQNAgent:
     def __init__(self, env, train=True):
@@ -96,6 +104,7 @@ class DQNAgent:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/P2-{MODEL_NAME}-{int(time.time())}")
         self.target_update_counter = 0
+
 
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
@@ -116,10 +125,12 @@ class DQNAgent:
             tf.expand_dims(node_input, axis=0),
             tf.expand_dims(adj_input, axis=0),
             tf.expand_dims(swap_flag_input, axis=0)
+
         ]
         # Call the model directly (more efficient in a tf.function)
         q_values = self.model(inputs, training=False)
         return q_values[0] # Return the Q-values for the single state
+
 
     @tf.function(input_signature=[
         (tf.TensorSpec(shape=(None, HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
@@ -135,68 +146,81 @@ class DQNAgent:
         tf.TensorSpec(shape=(None,), dtype=tf.bool)
     ])
     def train_step(self, states, actions, rewards, next_states, dones):
+        # Calculate target Q-values using the Double DQN update rule
+        future_q_values = self.target_model(next_states, training=False)
+        max_future_q = tf.reduce_max(future_q_values, axis=1)
+        target_q_values = rewards + (1.0 - tf.cast(dones, tf.float32)) * DISCOUNT * max_future_q
+
         with tf.GradientTape() as tape:
-            future_q_values = self.target_model(next_states, training=False)
-            max_future_q = tf.reduce_max(future_q_values, axis=1)
+            # Get the Q-values for the taken actions using the main model
+            # The 'states' argument is a tuple of tensors, which is the correct input format
+            all_q_values = self.model(states, training=True)
             
-            # The calculation of target_q is done in float32 for better precision
-            target_q = rewards + (1 - tf.cast(dones, tf.float32)) * DISCOUNT * tf.cast(max_future_q, tf.float32)
-             # The mask and predicted_q calculation remains the same
-            mask = tf.one_hot(tf.cast(actions, dtype=tf.int32), self.env.ACTION_SPACE_SIZE)
-            q_values = self.model(states, training=True)
-            mask = tf.cast(mask, q_values.dtype)
-            predicted_q = tf.reduce_sum(tf.multiply(q_values, mask), axis=1)
+            # Gather the Q-values corresponding to the actions taken
+            action_indices = tf.stack([tf.range(tf.shape(actions)[0], dtype=tf.int32), actions], axis=1)
+            predicted_q_values = tf.gather_nd(all_q_values, action_indices)
+            # THE FIX: Check if the optimizer is wrapped for mixed precision
+            is_mixed_precision = hasattr(self.model.optimizer, 'get_scaled_loss')
 
-            loss = tf.keras.losses.MSE(target_q, predicted_q)
+            # Calculate loss
+            loss = self.model.loss(target_q_values, predicted_q_values)
+            # THE FIX: Use tf.cond for robust conditional logic in a graph
+            is_mixed_precision = isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer)
+            
+            if is_mixed_precision:
+                scaled_loss = self.model.optimizer.get_scaled_loss(loss)
+                scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
+                gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
+            else:
+                gradients = tape.gradient(loss, self.model.trainable_variables)
+        
+        self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
-            # Get the scaled loss
-            scaled_loss = self.model.optimizer.get_scaled_loss(loss)
-
-        # Get scaled gradients
-        scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
-
-        # Get unscaled gradients
-        unscaled_gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
-
-        # Apply the unscaled gradients
-        self.model.optimizer.apply_gradients(zip(unscaled_gradients, self.model.trainable_variables))
 
     def train(self, terminal_state, step):
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
-        minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
+        minibatch_indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
+        minibatch = [self.replay_memory[i] for i in minibatch_indices]
 
-        # Define the data signature for a single state (now with 4 components)
-        state_signature = (
-            tf.TensorSpec(shape=(self.env.SIZE, self.env.SIZE, 3), dtype=tf.float32),
-            tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, 3), dtype=tf.float32),
-            tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, self.env.SIZE * self.env.SIZE), dtype=tf.float32),
-            tf.TensorSpec(shape=(1,), dtype=tf.float32) # Added signature for swap_flag
+        states, actions, rewards, next_states, dones = zip(*minibatch)
+
+        # Correctly unpack the 4-part states
+        current_conv_inputs, current_node_inputs, current_adj_inputs, current_swap_flags = zip(*states)
+        next_conv_inputs, next_node_inputs, next_adj_inputs, next_swap_flags = zip(*next_states)
+
+        # Prepare state tuples for the train_step function
+        current_states_tuple = (
+            tf.convert_to_tensor(np.array(current_conv_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(current_node_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(current_adj_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(current_swap_flags), dtype=tf.float32)
         )
-
-        # Create a TensorFlow dataset from the minibatch with the updated signature
-        dataset = tf.data.Dataset.from_generator(
-            lambda: minibatch,
-            output_signature=(
-                state_signature, # state
-                tf.TensorSpec(shape=(), dtype=tf.int32), # action
-                tf.TensorSpec(shape=(), dtype=tf.float32), # reward
-                state_signature, # next_state
-                tf.TensorSpec(shape=(), dtype=tf.bool) # done
-            )
+        next_states_tuple = (
+            tf.convert_to_tensor(np.array(next_conv_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(next_node_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(next_adj_inputs), dtype=tf.float32),
+            tf.convert_to_tensor(np.array(next_swap_flags), dtype=tf.float32)
         )
+        actions_tensor = tf.convert_to_tensor(np.array(actions), dtype=tf.int32)
+        rewards_tensor = tf.convert_to_tensor(np.array(rewards), dtype=tf.float32)
+        dones_tensor = tf.convert_to_tensor(np.array(dones), dtype=tf.bool)
 
-        dataset = dataset.batch(MINIBATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-
-        for states, actions, rewards, next_states, dones in dataset:
-            self.train_step(states, actions, rewards, next_states, dones)
-
+        self.train_step(
+            current_states_tuple,
+            actions_tensor,
+            rewards_tensor,
+            next_states_tuple,
+            dones_tensor
+        )
+        
         if terminal_state:
             self.target_update_counter += 1
         if self.target_update_counter > UPDATE_TARGET_EVERY:
             self.target_model.set_weights(self.model.get_weights())
             self.target_update_counter = 0
+
 
 def configure_gpu_optimizations():
     policy = tf.keras.mixed_precision.Policy('mixed_float16')

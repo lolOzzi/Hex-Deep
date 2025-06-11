@@ -1,6 +1,48 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from numba import jit
 
+@jit(nopython=True)
+def find_static(parent, x):
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+
+@jit(nopython=True)
+def union_static(parent, rank, x, y):
+    rx = find_static(parent, x)
+    ry = find_static(parent, y)
+    if rx == ry:
+        return
+    if rank[rx] < rank[ry]:
+        parent[rx] = ry
+    elif rank[rx] > rank[ry]:
+        parent[ry] = rx
+    else:
+        parent[ry] = rx
+        rank[rx] += 1
+
+@jit(nopython=True)
+def perform_union_static(parent, rank, board, directions, BOARD_SIZE, P_EDGE_1, P_EDGE_2, pos, player):
+    i, j = pos
+    idx = i * BOARD_SIZE + j
+    neighbor_val = 1 if player == 1 else 2
+
+    # Connect to virtual nodes
+    if player == 1:
+        if i == 0: union_static(parent, rank, idx, P_EDGE_1)
+        if i == BOARD_SIZE - 1: union_static(parent, rank, idx, P_EDGE_2)
+    else: # player == 2
+        if j == 0: union_static(parent, rank, idx, P_EDGE_1)
+        if j == BOARD_SIZE - 1: union_static(parent, rank, idx, P_EDGE_2)
+
+    # Connect to adjacent neighbors
+    for k in range(len(directions)):
+        dx, dy = directions[k]
+        ni, nj = i + dx, j + dy
+        if 0 <= ni < BOARD_SIZE and 0 <= nj < BOARD_SIZE and board[ni, nj] == neighbor_val:
+            union_static(parent, rank, idx, ni * BOARD_SIZE + nj)
 
 class Hex_Game:
     def __init__(self, n):
@@ -11,7 +53,7 @@ class Hex_Game:
         self.p2Board = np.zeros((n, n), dtype=int)
 
         self.current_player = 1
-        self.directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)]
+        self.directions = np.array([(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)], dtype=np.int8)
         self.actionspace = set((i, j) for i in range(n) for j in range(n))
         self.posMoves = n * n
 
@@ -22,10 +64,10 @@ class Hex_Game:
 
         # —– Union‐Find setup (two virtual nodes per player) —–
         size_uf = n * n + 2
-        self.p1_parent = list(range(size_uf))
-        self.p1_rank = [0] * size_uf
-        self.p2_parent = list(range(size_uf))
-        self.p2_rank = [0] * size_uf
+        self.p1_parent = np.arange(size_uf, dtype=np.int32)
+        self.p1_rank = np.zeros(size_uf, dtype=np.int32)
+        self.p2_parent = np.arange(size_uf, dtype=np.int32)
+        self.p2_rank = np.zeros(size_uf, dtype=np.int32)
 
         # Virtual nodes:
         self.P1_TOP = n * n
@@ -37,26 +79,15 @@ class Hex_Game:
         """Reset the game to a brand‐new empty board of the same size."""
         self.__init__(self.BOARD_SIZE)
 
-    # —– Union‐Find helpers —–
-    def _find(self, parent, x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def _union(self, parent, rank, x, y):
-        rx = self._find(parent, x)
-        ry = self._find(parent, y)
-        if rx == ry:
-            return
-        if rank[rx] < rank[ry]:
-            parent[rx] = ry
-        elif rank[rx] > rank[ry]:
-            parent[ry] = rx
+    def _perform_union(self, pos, player):
+        """Helper method to call the fast, jitted union-find operations."""
+        if player == 1:
+            perform_union_static(self.p1_parent, self.p1_rank, self.board, self.directions,
+                                self.BOARD_SIZE, self.P1_TOP, self.P1_BOTTOM, pos, player)
         else:
-            parent[ry] = rx
-            rank[rx] += 1
-
+            perform_union_static(self.p2_parent, self.p2_rank, self.board, self.directions,
+                                self.BOARD_SIZE, self.P2_LEFT, self.P2_RIGHT, pos, player)
+            
     def _undo_p1_first_move(self):
         """Resets the board state and union-find data for Player 1's first move."""
         orig_i, orig_j = self.first_move_pos
@@ -76,27 +107,6 @@ class Hex_Game:
         if orig_i == self.BOARD_SIZE - 1:
             self.p1_parent[self.P1_BOTTOM] = self.P1_BOTTOM
             self.p1_rank[self.P1_BOTTOM] = 0
-
-    def _perform_union(self, pos, player):
-        """Helper method to perform union-find operations for a given move."""
-        i, j = pos
-        idx = i * self.BOARD_SIZE + j
-
-        parent, rank, neighbor_val = (self.p1_parent, self.p1_rank, 1) if player == 1 else (self.p2_parent, self.p2_rank, 2)
-
-        # Connect to virtual nodes (edges of the board)
-        if player == 1:
-            if i == 0: self._union(parent, rank, idx, self.P1_TOP)
-            if i == self.BOARD_SIZE - 1: self._union(parent, rank, idx, self.P1_BOTTOM)
-        else: # player == 2
-            if j == 0: self._union(parent, rank, idx, self.P2_LEFT)
-            if j == self.BOARD_SIZE - 1: self._union(parent, rank, idx, self.P2_RIGHT)
-
-        # Connect to adjacent neighbors of the same color
-        for dx, dy in self.directions:
-            ni, nj = i + dx, j + dy
-            if 0 <= ni < self.BOARD_SIZE and 0 <= nj < self.BOARD_SIZE and self.board[ni, nj] == neighbor_val:
-                self._union(parent, rank, idx, ni * self.BOARD_SIZE + nj)
 
     def placeMove(self, pos, player, is_swap_action=False):
         """
@@ -157,13 +167,13 @@ class Hex_Game:
         """
         if player == 1:
             return (
-                self._find(self.p1_parent, self.P1_TOP)
-                == self._find(self.p1_parent, self.P1_BOTTOM)
+                find_static(self.p1_parent, self.P1_TOP)
+                == find_static(self.p1_parent, self.P1_BOTTOM)
             )
         else:
             return (
-                self._find(self.p2_parent, self.P2_LEFT)
-                == self._find(self.p2_parent, self.P2_RIGHT)
+                find_static(self.p2_parent, self.P2_LEFT)
+                == find_static(self.p2_parent, self.P2_RIGHT)
             )
 
     # ——— Drawing routines (unchanged) ———
@@ -277,3 +287,4 @@ if __name__ == "__main__":
 
 
     hg.draw_board(size=1, dims=hg.BOARD_SIZE)
+
