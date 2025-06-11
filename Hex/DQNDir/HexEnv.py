@@ -79,7 +79,7 @@ class HexEnv:
             board_state = np.stack([self.hex.p1Board, self.hex.p2Board, swap_channel], axis=-1)
         else:
             board_state = np.stack([self.hex.p2Board.T, self.hex.p1Board.T, swap_channel.T], axis=-1)
-        return [board_state, swap_flag]
+        return (board_state, swap_flag)
 
     def resetRand(self, render=False):
         if render:

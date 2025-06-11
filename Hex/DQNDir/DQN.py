@@ -37,6 +37,7 @@ class DQNAgent:
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
         self.target_update_counter = 0
         self.randomGen = np.random.default_rng(1)
+        self.lossfn = tf.keras.losses.MeanSquaredError()
 
     
     def residual_block(self, x, filters):
@@ -127,10 +128,10 @@ class DQNAgent:
     
     @tf.function(
         input_signature=[
-            [
+            (
                 tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32),
                 tf.TensorSpec(shape=(1,), dtype=tf.float32)
-            ]
+            )
         ]
     )
     def get_qs(self, state):
@@ -144,14 +145,18 @@ class DQNAgent:
         )[0]
     
     @tf.function(
-            input_signature=
-            (
-                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)),
-                tf.TensorSpec(shape=(), dtype=tf.int32),
-                tf.TensorSpec(shape=(), dtype=tf.float32),
-                (tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(1,), dtype=tf.float32)),
-                tf.TensorSpec(shape=(), dtype=tf.float32)
-            )
+        input_signature=(
+            # The 'states' and 'next_states' tuples now have a 'None' for the batch dimension.
+            (tf.TensorSpec(shape=(None, 5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
+            
+            # Actions, rewards, and dones are now vectors of size 'None' (the batch size).
+            tf.TensorSpec(shape=(None,), dtype=tf.int32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32),
+            
+            (tf.TensorSpec(shape=(None, 5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
+            
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
     )
     def train_step(self, states, actions, rewards, next_states, dones):
         """
@@ -170,7 +175,7 @@ class DQNAgent:
             one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE)
             q_values = self.model([current_states_board, current_states_swap], training=True)
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
-            loss = self.model.loss(target_q_values, predicted_q_values)
+            loss = self.lossfn(target_q_values, predicted_q_values)
         
         gradients = tape.gradient(loss, self.model.trainable_variables)
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
