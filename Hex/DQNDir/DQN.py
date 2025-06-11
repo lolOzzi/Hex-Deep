@@ -99,15 +99,41 @@ class DQNAgent:
 
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=(HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
+        tf.TensorSpec(shape=(HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
+        tf.TensorSpec(shape=(HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
+        tf.TensorSpec(shape=(1,), dtype=tf.float32)
+    ])
+    def get_qs(self, conv_input, node_input, adj_input, swap_flag_input):
+        """
+        Get Q-values for a single state. Compiles into a TF graph.
+        Note: The input is four separate tensors, not a list.
+        """
+        # The model expects a batch dimension, so we add it.
+        inputs = [
+            tf.expand_dims(conv_input, axis=0),
+            tf.expand_dims(node_input, axis=0),
+            tf.expand_dims(adj_input, axis=0),
+            tf.expand_dims(swap_flag_input, axis=0)
+        ]
+        # Call the model directly (more efficient in a tf.function)
+        q_values = self.model(inputs, training=False)
+        return q_values[0] # Return the Q-values for the single state
 
-    def get_qs(self, state):
-        # Pass all four state components to the model
-        return self.model.predict(
-            [np.array([state[0]]), np.array([state[1]]), np.array([state[2]]), np.array([state[3]])],
-            verbose=0
-        )[0]
-
-    @tf.function
+    @tf.function(input_signature=[
+        (tf.TensorSpec(shape=(None, HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
+        tf.TensorSpec(shape=(None,), dtype=tf.int32),
+        tf.TensorSpec(shape=(None,), dtype=tf.float32),
+        (tf.TensorSpec(shape=(None, HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
+         tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
+        tf.TensorSpec(shape=(None,), dtype=tf.bool)
+    ])
     def train_step(self, states, actions, rewards, next_states, dones):
         with tf.GradientTape() as tape:
             future_q_values = self.target_model(next_states, training=False)

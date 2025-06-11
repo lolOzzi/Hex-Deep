@@ -92,8 +92,7 @@ class HexEnv:
         # --- Part 4: Swap Flag Input ---
         swap_flag = np.array([1.0 if is_swap_available else 0.0])
 
-        return [conv_input.astype(np.float32), node_features.astype(np.float32), adj_matrix.astype(np.float32), swap_flag.astype(np.float32)]
-
+        return (conv_input.astype(np.float32), node_features.astype(np.float32), adj_matrix.astype(np.float32), swap_flag.astype(np.float32))
     def resetRand(self, render=False):
         if render:
             self.close()
