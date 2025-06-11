@@ -36,7 +36,7 @@ class DQNAgent:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
         self.target_update_counter = 0
-        self.randomGen = np.random.default_rng(1)
+        self.randomGen = np.random.default_rng(2)
         self.lossfn = tf.keras.losses.MeanSquaredError()
 
     

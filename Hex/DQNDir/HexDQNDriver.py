@@ -48,9 +48,9 @@ ep_rewards = [MIN_REWARD]
 ep_rewards2 = [MIN_REWARD]
 
 # For more repetitive results
-random.seed(1)
-np.random.seed(1)
-tf.random.set_seed(1)
+random.seed(2)
+np.random.seed(2)
+tf.random.set_seed(2)
 
 
 for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
