@@ -12,20 +12,26 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-mars-s-c+d-res(Continued)_____5.00max____2.95avg____0.00min__1749648705.keras'
+model_file = 'models/5x5-mars-s-c+d-res(Continued)_____5.00max____1.15avg____0.00min__1749675939.keras'
 #model_file = None
-if model_file:
-    agent.model.load_weights(model_file)
-    agent.target_model.set_weights(agent.model.get_weights())
-    print("Model loaded")
-else:
-    print("No modelfile found")
-
-SIZE = 5
 
 
+def loadModel(model_file):
+    if model_file:
+        agent.model.load_weights(model_file)
+        agent.target_model.set_weights(agent.model.get_weights())
+        print("Model loaded")
+    else:
+        print("No modelfile found")
+
+def loadPartialModel(model_file):
+    agent.load_partial_weights(model_file)
+
+loadPartialModel(model_file)
 
 # Environment settings
+SIZE = 5
+
 EPISODES = 20_000
 SELF_PLAY_START_EPISODE = 500
 MOVE_PENALTY_DECAY_EPISODE = 0
@@ -90,13 +96,10 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         if player == 2 and env.hex.swap and not env.hex.first_turn:
             valid_flat_actions.add(env.SWAP_ACTION)
         
-        # --- Exploration vs. Exploitation ---
-        if np.random.random() < epsilon:
-            action = agent.randomGen.choice(list(valid_flat_actions))
-        else:
-            # Get Q-values for valid actions and choose the best one
-            valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
-            action = max(valid_q_values, key=valid_q_values.get)
+
+        # Get Q-values for valid actions and choose the best one
+        valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
+        action = max(valid_q_values, key=valid_q_values.get)
         
         otherPlayer_state = env.getObservation(3 - player)
         # --- Execute action and process results ---

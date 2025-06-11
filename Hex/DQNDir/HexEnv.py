@@ -102,7 +102,7 @@ class HexEnv:
         return (self.getObservation(self.player_num), self.turn_penalty, False)
 
     def calc_op_move(self):
-        return random.choice(tuple(self.hex.actionspace))
+        return random.sample(list(self.hex.actionspace), 1)[0]
     
     def render(self):
         self.fig, self.ax = self.hex.draw_board(self.fig, self.ax)
