@@ -139,7 +139,8 @@ class DQNAgent:
             future_q_values = self.target_model(next_states, training=False)
             max_future_q = tf.reduce_max(future_q_values, axis=1)
             
-            target_q = rewards + (1 - tf.cast(dones, tf.float32)) * DISCOUNT * max_future_q
+            # Corrected line
+            target_q = rewards + (1 - tf.cast(dones, tf.float32)) * DISCOUNT * tf.cast(max_future_q, tf.float32)
             mask = tf.one_hot(tf.cast(actions, dtype=tf.int32), self.env.ACTION_SPACE_SIZE)
             q_values = self.model(states, training=True)
             predicted_q = tf.reduce_sum(tf.multiply(q_values, mask), axis=1)
