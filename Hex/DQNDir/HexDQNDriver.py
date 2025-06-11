@@ -9,7 +9,7 @@ from tqdm import tqdm
 print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
-
+'''
 #model_file = 'models/5x5-tellus-s-c+d-3l_____5.00max____3.40avg____0.00min__1749550630.keras'
 model_file = None
 if model_file:
@@ -18,9 +18,25 @@ if model_file:
     print("Model loaded")
 else:
     print("No modelfile found")
+'''
+
+
+import subprocess
+
+try:
+    model_file = subprocess.check_output("ls -t ./models/5x5-tellus* 2>/dev/null | head -n 1", shell=True, text=True).strip()
+    if model_file:
+        print(f"Attempting to load {model_file}")
+        agent.model.load_weights(model_file)
+        agent.target_model.set_weights(agent.model.get_weights())
+        print(f"Model loaded from {model_file}")
+    else:
+        print("No modelfile found")
+except subprocess.CalledProcessError:
+    model_file = None
+    print("Error locating model file")
 
 SIZE = 5
-
 
 # Environment settings
 EPISODES = 20_000

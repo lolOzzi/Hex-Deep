@@ -50,7 +50,7 @@ class DQNAgent:
 
         # Layer 1: Local pattern detection (3x3 receptive field)
         # 64 filters to capture various local Hex patterns
-        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
+        x = Conv2D(64, kernel_size=3, padding='same', activation='relu',
                 name='local_patterns')(board_input)
         
         # Layer 2: Global pattern detection (5x5 receptive field = full board)
