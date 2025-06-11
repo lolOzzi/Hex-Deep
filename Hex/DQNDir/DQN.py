@@ -149,6 +149,7 @@ class DQNAgent:
         # Calculate target Q-values using the Double DQN update rule
         future_q_values = self.target_model(next_states, training=False)
         max_future_q = tf.reduce_max(future_q_values, axis=1)
+        max_future_q = tf.cast(max_future_q, tf.float32)
         target_q_values = rewards + (1.0 - tf.cast(dones, tf.float32)) * DISCOUNT * max_future_q
 
         with tf.GradientTape() as tape:
