@@ -12,8 +12,8 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-mars-s-c+d-res_____5.00max____0.50avg____0.00min__1749631137.keras'
-#model_file = None
+#model_file = 'models/5x5-mars-s-c+d-res_____5.00max____0.50avg____0.00min__1749631137.keras'
+model_file = None
 if model_file:
     agent.model.load_weights(model_file)
     agent.target_model.set_weights(agent.model.get_weights())
