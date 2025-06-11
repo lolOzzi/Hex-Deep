@@ -136,9 +136,11 @@ class DQNAgent:
     ])
     def train_step(self, states, actions, rewards, next_states, dones):
         with tf.GradientTape() as tape:
-            # ... (code to calculate target_q) ...
+            future_q_values = self.target_model(next_states, training=False)
+            max_future_q = tf.reduce_max(future_q_values, axis=1)
+            
+            # The calculation of target_q is done in float32 for better precision
 
-            # The mask and predicted_q calculation remains the same
             mask = tf.one_hot(tf.cast(actions, dtype=tf.int32), self.env.ACTION_SPACE_SIZE)
             q_values = self.model(states, training=True)
             mask = tf.cast(mask, q_values.dtype)
