@@ -117,35 +117,33 @@ class DQNAgent:
 
         minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
 
-        # Unpack the minibatch
-        current_states = [transition[0] for transition in minibatch]
-        actions = np.array([transition[1] for transition in minibatch])
-        rewards = np.array([transition[2] for transition in minibatch])
-        next_states = [transition[3] for transition in minibatch]
-        dones = np.array([transition[4] for transition in minibatch])
-        
-        # Prepare states for TensorFlow
-        current_conv_states = np.array([s[0] for s in current_states])
-        current_node_states = np.array([s[1] for s in current_states])
-        current_adj_states = np.array([s[2] for s in current_states])
-
-        next_conv_states = np.array([s[0] for s in next_states])
-        next_node_states = np.array([s[1] for s in next_states])
-        next_adj_states = np.array([s[2] for s in next_states])
-        
-        self.train_step(
-            [current_conv_states, current_node_states, current_adj_states],
-            actions,
-            rewards,
-            [next_conv_states, next_node_states, next_adj_states],
-            dones
+        # Create a TensorFlow dataset from the minibatch
+        dataset = tf.data.Dataset.from_generator(
+            lambda: minibatch,
+            output_signature=(
+                (tf.TensorSpec(shape=(self.env.SIZE, self.env.SIZE, 3), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, 3), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, self.env.SIZE * self.env.SIZE), dtype=tf.float32)),
+                tf.TensorSpec(shape=(), dtype=tf.int32),
+                tf.TensorSpec(shape=(), dtype=tf.float32),
+                (tf.TensorSpec(shape=(self.env.SIZE, self.env.SIZE, 3), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, 3), dtype=tf.float32),
+                tf.TensorSpec(shape=(self.env.SIZE * self.env.SIZE, self.env.SIZE * self.env.SIZE), dtype=tf.float32)),
+                tf.TensorSpec(shape=(), dtype=tf.bool)
+            )
         )
+
+        # Batch and prefetch the data
+        dataset = dataset.batch(MINIBATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+
+        for states, actions, rewards, next_states, dones in dataset:
+            self.train_step(states, actions, rewards, next_states, dones)
 
         if terminal_state:
             self.target_update_counter += 1
         if self.target_update_counter > UPDATE_TARGET_EVERY:
             self.target_model.set_weights(self.model.get_weights())
-            self.target_update_counter = 0
+        self.target_update_counter = 0
 
 def configure_gpu_optimizations():
     policy = tf.keras.mixed_precision.Policy('mixed_float16')
