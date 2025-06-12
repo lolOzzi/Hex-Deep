@@ -12,22 +12,30 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____2.80avg____0.00min__1749753661.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.70avg____0.00min__1749764577.keras'
 #model_file = None
 
 
-def loadModel(model_file):
-    if model_file:
-        agent.model.load_weights(model_file)
-        agent.target_model.set_weights(agent.model.get_weights())
-        print("Model loaded")
-    else:
-        print("No modelfile found")
+def loadModel(model_file_path):
 
+    if model_file_path:
+        print(f"Loading model from: {model_file_path}")
+        try:
+            agent.model = tf.keras.models.load_model(
+                model_file_path,
+                custom_objects={'NoisyFactorisedDense': NoisyFactorisedDense}
+            )
+            agent.target_model.set_weights(agent.model.get_weights())
+            print("Model loaded successfully.")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            print("Starting from scratch.")
+    else:
+        print("No model file found, starting from scratch.")
 def loadPartialModel(model_file):
     agent.load_partial_weights(model_file)
 
-loadPartialModel(model_file)
+loadModel(model_file)
 
 # Environment settings
 SIZE = 5
