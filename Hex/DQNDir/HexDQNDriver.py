@@ -30,9 +30,6 @@ def loadPartialModel(model_file):
 
 loadModel(model_file)
 
-# Environment settings
-
-
 SIZE = 5
 
 
@@ -88,7 +85,6 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         player = env.player_num
         all_q_values = agent.get_qs(*current_state)
 
-        # --- Get all valid actions for the current player ---
         # Get valid placement actions (as flat indices)
         if player == 1:
             # For P1, the mapping is direct: (row, col) -> row * SIZE + col
