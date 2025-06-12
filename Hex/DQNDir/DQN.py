@@ -227,14 +227,17 @@ class DQNAgent:
             #Negated, becuase q's are for opponent.
             target_q_values = rewards + (1.0 - dones) * DISCOUNT * (-max_future_qs)
 
+        # Compute DQN Bellman‐error loss:
+        #   target    = r + γ * max_a' Q_target(s', a')
+        #   predicted = Q(s, a)
+        #   loss      = mean( (target - predicted)^2 )
         with tf.GradientTape() as tape:
             one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE)
             q_values = self.model([current_states_board, current_states_swap], training=True)
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
             loss = self.lossfn(target_q_values, predicted_q_values)
             
-            # When using mixed precision, the optimizer is wrapped in a LossScaleOptimizer.
-            # You must scale the loss before calculating the gradients.
+            # Loss scaled, for use in mixed precesion calcs
             scaled_loss = self.model.optimizer.get_scaled_loss(loss)
         
         # Calculate gradients using the scaled loss.
