@@ -1,7 +1,7 @@
 # DQN.py
 
 import time
-
+import random
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, ReLU, Add, Concatenate, Input, GlobalAveragePooling1D
 from tensorflow.keras.optimizers import Adam
@@ -19,14 +19,126 @@ from tensorflow.keras.losses import MeanSquaredError
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input
+from DQNNFD import *
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-Hybrid-GNN-ConvNet-SwapFlag" # Updated Model Name
+MODEL_NAME = "5x5-Hybrid"
 NORMALISATION_VALUE = 1
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
 DISCOUNT = 0.99
 UPDATE_TARGET_EVERY = 5
+
+# --- Prioritized Experience Replay Parameters ---
+PER_e = 0.01  # Epsilon: small value added to the priority to ensure no transition has zero priority.
+PER_a = 0.6   # Alpha: determines how much prioritization is used. (0: uniform sampling, 1: full prioritization)
+PER_b = 0.4   # Beta: importance-sampling exponent, anneals to 1.0.
+PER_b_increment_per_sampling = 0.001
+
+class SumTree:
+    """
+    A binary tree data structure where the value of a parent node is the sum of its children.
+    This allows for efficient O(log n) sampling of items based on their priorities.
+    """
+    write = 0
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.tree = np.zeros(2 * capacity - 1)
+        self.data = np.zeros(capacity, dtype=object)
+        self.n_entries = 0
+
+    def _propagate(self, idx, change):
+        parent = (idx - 1) // 2
+        self.tree[parent] += change
+        if parent != 0:
+            self._propagate(parent, change)
+
+    def _retrieve(self, idx, s):
+        left = 2 * idx + 1
+        right = left + 1
+        if left >= len(self.tree):
+            return idx
+        if s <= self.tree[left]:
+            return self._retrieve(left, s)
+        else:
+            return self._retrieve(right, s - self.tree[left])
+
+    def total(self):
+        return self.tree[0]
+
+    def add(self, p, data):
+        idx = self.write + self.capacity - 1
+        self.data[self.write] = data
+        self.update(idx, p)
+        self.write += 1
+        if self.write >= self.capacity:
+            self.write = 0
+        if self.n_entries < self.capacity:
+            self.n_entries += 1
+
+    def update(self, idx, p):
+        change = p - self.tree[idx]
+        self.tree[idx] = p
+        self._propagate(idx, change)
+
+    def get(self, s):
+        idx = self._retrieve(0, s)
+        dataIdx = idx - self.capacity + 1
+        return (idx, self.tree[idx], self.data[dataIdx])
+
+class ReplayBuffer:
+    """
+    A Prioritized Experience Replay buffer that uses a SumTree for efficient sampling.
+    """
+    def __init__(self, capacity):
+        self.tree = SumTree(capacity)
+        self.capacity = capacity
+        self.beta = PER_b
+
+    def __len__(self):
+        return self.tree.n_entries
+
+    def store(self, experience):
+        # New experiences are given the highest priority to ensure they are trained on.
+        max_p = np.max(self.tree.tree[-self.capacity:])
+        if max_p == 0:
+            max_p = 1.0
+        self.tree.add(max_p, experience)
+
+    def sample(self, n):
+        batch = []
+        idxs = []
+        segment = self.tree.total() / n
+        priorities = []
+
+        # Anneal beta towards 1.0
+        self.beta = np.min([1., self.beta + PER_b_increment_per_sampling])
+
+        for i in range(n):
+            a = segment * i
+            b = segment * (i + 1)
+            s = random.uniform(a, b)
+            (idx, p, data) = self.tree.get(s)
+            priorities.append(p)
+            batch.append(data)
+            idxs.append(idx)
+
+        # Calculate importance-sampling weights to correct for the biased sampling.
+        sampling_probabilities = np.array(priorities) / self.tree.total()
+        is_weight = np.power(self.tree.n_entries * sampling_probabilities, -self.beta)
+        is_weight /= is_weight.max()
+
+        return batch, idxs, is_weight
+
+    def batch_update(self, tree_idx, abs_errors):
+        # Update the priorities of the sampled transitions based on their TD-error.
+        abs_errors += PER_e  # Add epsilon to ensure non-zero priority
+        clipped_errors = np.minimum(abs_errors, 1.0) # Clip errors to 1 for stability
+        ps = np.power(clipped_errors, PER_a)
+        for ti, p in zip(tree_idx, ps):
+            self.tree.update(ti, p)
+
 
 class GINConv(tf.keras.layers.Layer):
     """Graph Isomorphism Network (GIN) layer."""
@@ -76,9 +188,11 @@ def create_hybrid_gnn_convnet_model(board_size=5):
     fused_layer = Concatenate()([flat_conv_output, graph_embedding, swap_flag_input])
     
     # Dense layers for Q-value estimation
-    dense_layer = Dense(512, activation='relu')(fused_layer)
-    dense_layer = Dense(256, activation='relu')(dense_layer)
-    output_q_values = Dense(action_space_size, activation='linear', name="q_values")(dense_layer)
+    noisy_dense_layer = NoisyFactorisedDense(512)(fused_layer)
+    rectified_ndl = ReLU()(noisy_dense_layer)
+    noisy_dense_layer = NoisyFactorisedDense(256)(rectified_ndl)
+    rectified_ndl = ReLU()(noisy_dense_layer)
+    output_q_values = NoisyFactorisedDense(action_space_size, name="q_values")(rectified_ndl)
 
     # Create and compile the model with four inputs
     model = Model(inputs=[conv_input, node_input, adj_input, swap_flag_input], outputs=output_q_values)
@@ -95,7 +209,7 @@ class DQNAgent:
         self.model = create_hybrid_gnn_convnet_model(self.env.SIZE)
         self.target_model = create_hybrid_gnn_convnet_model(self.env.SIZE)
         self.target_model.set_weights(self.model.get_weights())
-        self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+        self.replay_memory = ReplayBuffer(REPLAY_MEMORY_SIZE)
 
         self.randomGen = np.random.default_rng(1)
         
@@ -106,7 +220,8 @@ class DQNAgent:
 
 
     def update_replay_memory(self, transition):
-        self.replay_memory.append(transition)
+        self.replay_memory.store(transition)
+        
     @tf.function(input_signature=[
         tf.TensorSpec(shape=(HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
         tf.TensorSpec(shape=(HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
@@ -142,9 +257,10 @@ class DQNAgent:
          tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
          tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
          tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
-        tf.TensorSpec(shape=(None,), dtype=tf.bool)
+        tf.TensorSpec(shape=(None,), dtype=tf.bool),
+        tf.TensorSpec(shape=(None,), dtype=tf.float32)
     ])
-    def train_step(self, states, actions, rewards, next_states, dones):
+    def train_step(self, states, actions, rewards, next_states, dones, is_weights):
         # Calculate target Q-values using the Double DQN update rule
         future_q_values = self.target_model(next_states, training=False)
         max_future_q = tf.reduce_max(future_q_values, axis=1)
@@ -153,30 +269,34 @@ class DQNAgent:
 
         with tf.GradientTape() as tape:
             # Get the Q-values for the taken actions using the main model
-            # The 'states' argument is a tuple of tensors, which is the correct input format
             all_q_values = self.model(states, training=True)
             
             # Gather the Q-values corresponding to the actions taken
             action_indices = tf.stack([tf.range(tf.shape(actions)[0], dtype=tf.int32), actions], axis=1)
             predicted_q_values = tf.gather_nd(all_q_values, action_indices)
-            # THE FIX: Check if the optimizer is wrapped for mixed precision
 
-            # Calculate loss. The optimizer will scale this loss automatically.
-            loss = self.model.loss(target_q_values, predicted_q_values)
-        
-        # Calculate gradients. GradientTape automatically uses the scaled loss.
+            # Calculate per-element loss for priority updates
+            abs_errors = tf.abs(target_q_values - predicted_q_values)
+            
+            # Use a loss object that doesn't perform reduction
+            loss_object = MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+            per_element_loss = loss_object(target_q_values, predicted_q_values)
+
+            # Apply importance-sampling weights and reduce to a single loss value
+            loss = tf.reduce_mean(is_weights * per_element_loss)
+
+        # Calculate gradients and apply them
         gradients = tape.gradient(loss, self.model.trainable_variables)
-        
-        # Apply gradients. The optimizer automatically unscales them before applying.
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        
+        return abs_errors
 
 
     def train(self, terminal_state, step):
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
-        minibatch_indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
-        minibatch = [self.replay_memory[i] for i in minibatch_indices]
+        minibatch, indices, is_weights = self.replay_memory.sample(MINIBATCH_SIZE)
 
         states, actions, rewards, next_states, dones = zip(*minibatch)
 
@@ -200,14 +320,20 @@ class DQNAgent:
         actions_tensor = tf.convert_to_tensor(np.array(actions), dtype=tf.int32)
         rewards_tensor = tf.convert_to_tensor(np.array(rewards), dtype=tf.float32)
         dones_tensor = tf.convert_to_tensor(np.array(dones), dtype=tf.bool)
-
-        self.train_step(
+        is_weights_tensor = tf.convert_to_tensor(is_weights, dtype=tf.float32)
+        
+        # Perform a training step and get the absolute errors for the batch
+        abs_errors = self.train_step(
             current_states_tuple,
             actions_tensor,
             rewards_tensor,
             next_states_tuple,
-            dones_tensor
+            dones_tensor,
+            is_weights_tensor
         )
+        
+        # Update priorities in the replay buffer
+        self.replay_memory.batch_update(indices, abs_errors.numpy())
         
         if terminal_state:
             self.target_update_counter += 1
