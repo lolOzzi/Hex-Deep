@@ -12,7 +12,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-mars-s-c+d-res(Continued)_____5.00max____1.15avg____0.00min__1749675939.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.80avg____0.00min__1749753661.keras'
 #model_file = None
 
 
@@ -27,7 +27,7 @@ def loadModel(model_file):
 def loadPartialModel(model_file):
     agent.load_partial_weights(model_file)
 
-#loadPartialModel(model_file)
+loadPartialModel(model_file)
 
 # Environment settings
 SIZE = 5
@@ -48,6 +48,7 @@ MIN_EPSILON = 0.001
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 100  # episodes
+MODEL_SAVE_EVERY = 500
 SHOW_PREVIEW = False
 
 ep_rewards = [MIN_REWARD]
@@ -184,8 +185,8 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         max_reward2 = max(ep_rewards2[-AGGREGATE_STATS_EVERY:])
         agent.tensorboard2.update_stats(reward_avg=average_reward2, reward_min=min_reward2, reward_max=max_reward2, epsilon=epsilon)
         # Save model, but only when min reward is greater or equal a set value
-        if min_reward >= MIN_REWARD or min_reward2 >= MIN_REWARD:
-            agent.model.save(f'models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.keras')
+    if not episode % MODEL_SAVE_EVERY:
+        agent.model.save(f'models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.keras')
 
     # Decay epsilon
     if epsilon > MIN_EPSILON:

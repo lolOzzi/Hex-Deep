@@ -63,35 +63,45 @@ class DQNAgent:
         return y
     
     def create_old_model(self):
+        """
+        Creates the Deep Q-Network (DQN) model for a 5x5 Hex board.
+        The architecture is a deep residual network inspired by AlphaZero.
+        The final dense layers are replaced with Noisy Layers.
+        """
+        # --- Input Layer ---
         board_input = Input(shape=(5, 5, 3), name='board_input')
         swap_input = Input(shape=(1,), name='swap_input')
 
-        # --- Convolutional Body (with explicit names) ---
+        # --- Convolutional Body (ADD EXPLICIT NAMES) ---
         x = Conv2D(filters=128, kernel_size=(3, 3), padding='same', name='initial_conv')(board_input)
         x = BatchNormalization(name='initial_bn')(x)
         x = ReLU(name='initial_relu')(x)
-
-        # 4 residual blocks to learn deep features.
-        # The loop now passes the block number to the helper function.
+        
+        # Also add names to the layers inside the residual blocks
         for i in range(4):
             x = self.residual_block(x, filters=128, block_num=i)
 
-        # --- Head 1: Q-Values for Board Moves ---
+        # Q-Values for Board Moves ---
         board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
                             activation='linear', name='board_q_values')(x)
         board_q_flat = Flatten(name='board_q_flat')(board_q_head)
 
-        # --- Head 2: Q-Value for the Swap Action ---
-        swap_head_features = Flatten(name='swap_flatten')(x)
-        swap_head_features = Concatenate(name='swap_concat')([swap_head_features, swap_input])
-        swap_head = Dense(128, activation='relu', name='swap_dense_1')(swap_head_features)
-        swap_q_value = Dense(1, activation='linear', name='swap_q_value')(swap_head)
 
-        # --- Final Concatenation ---
-        final_output = Concatenate(name='final_q_values')([board_q_flat, swap_q_value])
 
-        # --- Create and Compile Model ---
-        model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_swap')
+        # Concat with swap 
+        swap_head_features = Flatten(name='swap_flatten')(x) # Name this flatten layer as well
+        swap_head_features = Concatenate()([swap_head_features, swap_input])
+        
+        # Noisy layers
+        swap_head = NoisyFactorisedDense(128, name='noisy_dense_1')(swap_head_features)
+        swap_head = ReLU()(swap_head)
+        swap_q_value = NoisyFactorisedDense(1, name='swap_q_value')(swap_head) # Output layer
+
+        # Combine and compile
+        final_output = Concatenate(name='final_q_values',  dtype='float32')([board_q_flat, swap_q_value])
+
+
+        model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
         #model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
         
         return model
@@ -115,26 +125,26 @@ class DQNAgent:
         for i in range(4):
             x = self.residual_block(x, filters=128, block_num=i)
 
-        # --- Head 1: Q-Values for Board Moves ---
+        # Q-Values for Board Moves
         board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
                             activation='linear', name='board_q_values')(x)
         board_q_flat = Flatten(name='board_q_flat')(board_q_head)
 
         # Concat with swap 
-        swap_head_features = Flatten(name='swap_flatten')(x) # Name this flatten layer as well
-        swap_head_features = Concatenate()([swap_head_features, swap_input])
+        board_with_swap = Concatenate()([board_q_flat, swap_input])
         
         # Noisy layers
-        swap_head = NoisyFactorisedDense(128, name='noisy_dense_1')(swap_head_features)
-        swap_head = ReLU()(swap_head)
-        swap_q_value = NoisyFactorisedDense(1, name='swap_q_value')(swap_head) # Output layer
+        head = NoisyFactorisedDense(128, name='noisy_dense')(board_with_swap)
+        head = ReLU()(head)
+        q_value = NoisyFactorisedDense(128, name='q_values')(head) # Output layer
+        q_value = ReLU()(q_value)
 
         # Combine and compile
-        final_output = Concatenate(name='final_q_values',  dtype='float32')([board_q_flat, swap_q_value])
-
-
+        final_output = NoisyFactorisedDense(self.env.ACTION_SPACE_SIZE, 
+                                            name='noisy_final_q_values', 
+                                            dtype='float32')(q_value)
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
-        model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
+        model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
         
         return model
         
