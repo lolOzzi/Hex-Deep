@@ -13,8 +13,8 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____3.80avg____0.00min__1749681670.keras'
-#model_file = None
+#model_file = 'models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____3.80avg____0.00min__1749681670.keras'
+model_file = None
 
 
 def loadModel(model_file):
@@ -79,11 +79,12 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
 
     last_state_by_player = {1: None, 2: None}
     last_action_by_player = {1: None, 2: None}
+    last_reward_by_player = {1: None, 2: None}
 
     env.turn_penalty = MOVE_PENALTY_BASE_VALUE \
                        if episode < MOVE_PENALTY_DECAY_EPISODE \
                        else MOVE_PENALTY_DECAY_VALUE
-
+    has_last_move = False
     while not done:
         player = env.player_num
         all_q_values = agent.get_qs(*current_state)
@@ -109,14 +110,15 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
             valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
             action = max(valid_q_values, key=valid_q_values.get)
         
-        otherPlayer_state = env.getObservation(3 - player)
+        op_current_state = env.getObservation(3 - player)
         # --- Execute action and process results ---
         if self_play:
             new_state, reward, done = env.step(action, player)
-
+            op_new_state = env.getObservation(3 - player) 
             # Store state/action for potential loser punishment
             last_state_by_player[player]  = current_state
             last_action_by_player[player] = action
+            last_reward_by_player[player] = reward
 
             if player == 1:  
                 episode_reward += reward
@@ -124,9 +126,11 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 episode_reward2 += reward
 
             
-            
-            agent.update_replay_memory((current_state, action, reward, new_state, done))
-            agent.train(done, step)
+            if (has_last_move):
+                op = 3 - player
+                agent.update_replay_memory((last_state_by_player[op], last_action_by_player[op],
+                                            last_reward_by_player[op], op_new_state, done))
+                agent.train(done, step)
 
             # If the game ended, punish the loser
             if done:
@@ -135,8 +139,9 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 if last_state_by_player[loser] is not None:
                     loser_state  = last_state_by_player[loser]
                     loser_action = last_action_by_player[loser]
+                    
                     agent.update_replay_memory(
-                        (loser_state, loser_action, env.LOSS_PENALTY, otherPlayer_state, True)
+                        (loser_state, loser_action, env.LOSS_PENALTY, op_new_state, True)
                     )
                     agent.train(True, step)
             
@@ -144,6 +149,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
             env.player_num = 3 - player
             current_state = env.getObservation(env.player_num)
             step += 1
+            has_last_move = True
 
         else: # Play against a random opponent
             # Agent's move
