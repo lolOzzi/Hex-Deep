@@ -192,7 +192,7 @@ def create_hybrid_gnn_convnet_model(board_size=5):
     rectified_ndl = ReLU()(noisy_dense_layer)
     noisy_dense_layer = NoisyFactorisedDense(256)(rectified_ndl)
     rectified_ndl = ReLU()(noisy_dense_layer)
-    output_q_values = NoisyFactorisedDense(action_space_size, name="q_values")(rectified_ndl)
+    output_q_values = NoisyFactorisedDense(action_space_size, name="q_values", dtype='float32')(rectified_ndl)
 
     # Create and compile the model with four inputs
     model = Model(inputs=[conv_input, node_input, adj_input, swap_flag_input], outputs=output_q_values)
