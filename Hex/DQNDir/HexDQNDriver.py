@@ -48,7 +48,7 @@ MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE
 
 # Exploration settings
 epsilon = 1  # not a constant, going to be decayed
-EPSILON_DECAY = 0.99975
+EPSILON_DECAY = (0.001 / 1.0) ** (1 / EPISODES)
 MIN_EPSILON = 0.001
 
 #  Stats settings
