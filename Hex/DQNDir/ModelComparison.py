@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5-mars-s-c+d-res_____5.00max____0.80avg____0.00min__1749625361.keras"  # Player 1 Model
-MODEL_2_PATH =  "models/5x5-mars-s-c+d-res_____5.00max____0.80avg____0.00min__1749625361.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____2.75avg____0.00min__1749735727.keras"  # Player 1 Model
+MODEL_2_PATH =  "models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____2.75avg____0.00min__1749735727.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
@@ -82,7 +82,7 @@ def run_ai_vs_ai_match(model_path_1, model_path_2):
         player_num = env.player_num #
         current_agent = agents[player_num]
 
-        all_q_values = current_agent.get_qs(current_state) #
+        all_q_values = current_agent.get_qs(*current_state) #
         if (player_num==1):
             valid_flat_actions = [i * env.SIZE + j for (i, j) in env.hex.actionspace]
         else:
@@ -141,7 +141,7 @@ def run_human_vs_ai_match(ai_model_path, human_player_num):
             action = move_tuple[0] * env.SIZE + move_tuple[1]
         else:
             print(f"\nAI's turn (Player {ai_player_num})...")
-            all_q_values = ai_agent.get_qs(current_state) 
+            all_q_values = ai_agent.get_qs(*current_state) 
             
             # Get valid actions based on the current player
             if player_num == 1:
