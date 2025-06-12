@@ -11,10 +11,12 @@ class NoisyFactorisedDense(Layer):
     def build(self, input_shape):
         # nun of neurons from like the layer before
         self.in_features = input_shape[-1]
+        limit = 1.0 / tf.sqrt(float(self.in_features))
+        mu_initializer = tf.keras.initializers.RandomUniform(minval=-limit, maxval=limit)
 
         # The mean weights
-        self.mu_w = self.add_weight(shape=(self.in_features, self.units), initializer='he_uniform', name='mu_w')
-        self.mu_b = self.add_weight(shape=(self.units, ), initializer='zeros', name='mu_b')
+        self.mu_w = self.add_weight(shape=(self.in_features, self.units), initializer=mu_initializer, name='mu_w')
+        self.mu_b = self.add_weight(shape=(self.units, ), initializer=mu_initializer, name='mu_b')
 
         # Stand deviation guys, Initialization scaled by number of input neurons
         self.sigma_w = self.add_weight(shape=(self.in_features, self.units), initializer=tf.keras.initializers.Constant(self.sigma_init / tf.sqrt(float(self.in_features))), name='sigma_w')

@@ -11,7 +11,7 @@ from tensorflow.keras.layers import Input
 from DQNNFD import *
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-mars-s-c+d-res(Continued)"
+MODEL_NAME = "5x5-jupiter"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
@@ -63,7 +63,6 @@ class DQNAgent:
         return y
     
     def create_old_model(self):
-        # --- Input Layer ---
         board_input = Input(shape=(5, 5, 3), name='board_input')
         swap_input = Input(shape=(1,), name='swap_input')
 
@@ -211,7 +210,7 @@ class DQNAgent:
             tf.TensorSpec(shape=(None,), dtype=tf.float32)
         )
     )
-    def train_step(self, states, actions, rewards, next_states, dones):
+    def train_step(self, states, actions, rewards, next_states, dones, norm=False):
         """
         Performs a single, highly optimized training step.
         This function is compiled into a static graph.
@@ -222,7 +221,11 @@ class DQNAgent:
 
         future_qs_list = self.target_model([new_current_states_board, new_current_states_swap], training=False)
         max_future_qs = tf.reduce_max(future_qs_list, axis=1)
-        target_q_values = rewards + (1.0 - dones) * DISCOUNT * max_future_qs
+        if norm:
+            target_q_values = rewards + (1.0 - dones) * DISCOUNT * max_future_qs
+        else:
+            #Negated, becuase q's are for opponent.
+            target_q_values = rewards + (1.0 - dones) * DISCOUNT * (-max_future_qs)
 
         with tf.GradientTape() as tape:
             one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE)

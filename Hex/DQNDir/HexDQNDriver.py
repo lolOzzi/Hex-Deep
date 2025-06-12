@@ -32,7 +32,7 @@ def loadPartialModel(model_file):
 # Environment settings
 SIZE = 5
 
-EPISODES = 20_000
+EPISODES = 100_000
 SELF_PLAY_START_EPISODE = 500
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = -0.05
@@ -101,10 +101,13 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
         action = max(valid_q_values, key=valid_q_values.get)
         
-        otherPlayer_state = env.getObservation(3 - player)
+        op_state_pre_action = env.getObservation(3 - player)
+        cp_state_pre_action = env.getObservation(player)
         # --- Execute action and process results ---
         if self_play:
             new_state, reward, done = env.step(action, player)
+
+            op_state_post_action = env.getObservation(3-player)
 
             # Store state/action for potential loser punishment
             last_state_by_player[player]  = current_state
@@ -117,7 +120,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
 
             
             
-            agent.update_replay_memory((current_state, action, reward, new_state, done))
+            agent.update_replay_memory((current_state, action, reward, op_state_post_action, done))
             agent.train(done, step)
 
             # If the game ended, punish the loser
@@ -128,7 +131,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                     loser_state  = last_state_by_player[loser]
                     loser_action = last_action_by_player[loser]
                     agent.update_replay_memory(
-                        (loser_state, loser_action, env.LOSS_PENALTY, otherPlayer_state, True)
+                        (loser_state, loser_action, env.LOSS_PENALTY, cp_state_pre_action, True)
                     )
                     agent.train(True, step)
             
@@ -151,12 +154,13 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 # We need to get the resulting state after the opponent moves
                 env.hex.placeMove(opponent_action_pos, 3 - env.player_num)
                 final_state = env.getObservation(env.player_num)
+                final_state_op = env.getObservation(3 - env.player_num)
                 if env.hex.checkWin(3 - env.player_num):
                     done = True
                     reward = env.LOSS_PENALTY # Agent lost
                     agent.update_replay_memory((current_state, action, reward, new_state, True))
                 else:
-                    agent.update_replay_memory((current_state, action, reward, final_state, False))
+                    agent.update_replay_memory((current_state, action, reward, final_state_op, False))
                 # The 'new_state' for the agent's transition is after the opponent has moved
 
                 agent.train(done, step)

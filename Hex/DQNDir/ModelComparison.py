@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5-mars-s-c+d-res(Continued)_____0.00max____0.00avg____0.00min__1749685192.keras"  # Player 1 Model
-MODEL_2_PATH =  "models/5x5-mars-s-c+d-res(Continued)_____0.00max____0.00avg____0.00min__1749685192.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5-mars-s-c+d-res(Continued)_____5.00max____4.85avg____0.00min__1749699882.keras"  # Player 1 Model
+MODEL_2_PATH =  "models/5x5-mars-s-c+d-res(Continued)_____5.00max____4.85avg____0.00min__1749699882.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
