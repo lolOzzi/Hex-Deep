@@ -202,6 +202,7 @@ def create_hybrid_gnn_convnet_model(board_size=5):
 
 class DQNAgent:
     def __init__(self, env, train=True):
+        
         self.env = env
         if (len(tf.config.experimental.list_physical_devices('GPU')) > 0):
             configure_gpu_optimizations()
@@ -212,12 +213,78 @@ class DQNAgent:
         self.replay_memory = ReplayBuffer(REPLAY_MEMORY_SIZE)
 
         self.randomGen = np.random.default_rng(1)
-        
+        self.target_update_counter = 0
+        self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/P2-{MODEL_NAME}-{int(time.time())}")
-        self.target_update_counter = 0
+            self.dataset_iterator = self._create_dataset_iterator()
+        
+        
+    def _replay_generator(self):
+        """
+        A generator that endlessly yields random minibatches from the replay buffer.
+        """
+        while True:
+            # Wait until the replay buffer is large enough to sample from.
+            # This check prevents errors at the beginning of training.
+            if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
+                # If buffer is not ready, we can wait a bit to prevent a busy loop.
+                time.sleep(0.1)
+                continue
 
+            # Sample a minibatch of indices. Using np.random.choice is fine here.
+            indices = np.random.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
+            
+            # Retrieve the experiences.
+            # Note: Accessing the deque this way is mostly thread-safe for this use case.
+            # The main thread only appends, which won't invalidate existing indices.
+            try:
+                states, actions, rewards, next_states, dones = zip(*[self.replay_memory[i] for i in indices])
+            except IndexError:
+                # In the rare case the buffer shrinks, just skip this iteration.
+                continue
+             ### All data conversion now happens here, in the background thread.
+            
+            # Unpack and stack board + swap flag components for states and next_states
+            def stack_components(pairs):
+                board, swap = zip(*pairs)
+                return np.array(board, dtype=np.float32), np.array(swap, dtype=np.float32)
+
+            current_states_board, current_states_swap = stack_components(states)
+            next_states_board, next_states_swap = stack_components(next_states)
+            
+            # Convert actions, rewards, and dones
+            actions = np.array(actions, dtype=np.int32)
+            rewards = np.array(rewards, dtype=np.float32)
+            dones = np.array(dones, dtype=np.float32)
+            
+            # Yield the complete, processed batch. TensorFlow will handle tensor conversion.
+            yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
+
+    def _create_dataset_iterator(self):
+        """
+        Creates a tf.data.Dataset pipeline that runs in the background.
+        """
+        # Note the output_signature. It must match the structure and types of what the generator yields.
+        # The shapes are for a BATCH of data.
+        dataset = tf.data.Dataset.from_generator(
+            self._replay_generator,
+            output_signature=(
+                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 3), dtype=tf.float32), 
+                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.int32),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32),
+                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 3), dtype=tf.float32),
+                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32)
+            )
+        )
+        
+        # Prefetch allows the data pipeline to prepare the next batch while the current one is being processed on the GPU.
+        # This is a key performance optimization.
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        return iter(dataset)
 
     def update_replay_memory(self, transition):
         self.replay_memory.store(transition)
@@ -246,20 +313,7 @@ class DQNAgent:
         return q_values[0] # Return the Q-values for the single state
 
 
-    @tf.function(input_signature=[
-        (tf.TensorSpec(shape=(None, HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
-        tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        tf.TensorSpec(shape=(None,), dtype=tf.float32),
-        (tf.TensorSpec(shape=(None, HexEnv.SIZE, HexEnv.SIZE, 3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, 3), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, HexEnv.SIZE * HexEnv.SIZE, HexEnv.SIZE * HexEnv.SIZE), dtype=tf.float32),
-         tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
-        tf.TensorSpec(shape=(None,), dtype=tf.bool),
-        tf.TensorSpec(shape=(None,), dtype=tf.float32)
-    ])
+    @tf.function
     def train_step(self, states, actions, rewards, next_states, dones, is_weights):
         # Calculate target Q-values using the Double DQN update rule
         future_q_values = self.target_model(next_states, training=False)
@@ -293,50 +347,16 @@ class DQNAgent:
 
 
     def train(self, terminal_state, step):
+
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
-
-        minibatch, indices, is_weights = self.replay_memory.sample(MINIBATCH_SIZE)
-
-        states, actions, rewards, next_states, dones = zip(*minibatch)
-
-        # Correctly unpack the 4-part states
-        current_conv_inputs, current_node_inputs, current_adj_inputs, current_swap_flags = zip(*states)
-        next_conv_inputs, next_node_inputs, next_adj_inputs, next_swap_flags = zip(*next_states)
-
-        # Prepare state tuples for the train_step function
-        current_states_tuple = (
-            tf.convert_to_tensor(np.array(current_conv_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(current_node_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(current_adj_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(current_swap_flags), dtype=tf.float32)
-        )
-        next_states_tuple = (
-            tf.convert_to_tensor(np.array(next_conv_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(next_node_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(next_adj_inputs), dtype=tf.float32),
-            tf.convert_to_tensor(np.array(next_swap_flags), dtype=tf.float32)
-        )
-        actions_tensor = tf.convert_to_tensor(np.array(actions), dtype=tf.int32)
-        rewards_tensor = tf.convert_to_tensor(np.array(rewards), dtype=tf.float32)
-        dones_tensor = tf.convert_to_tensor(np.array(dones), dtype=tf.bool)
-        is_weights_tensor = tf.convert_to_tensor(is_weights, dtype=tf.float32)
+        states, actions, rewards, next_states, dones = next(self.dataset_iterator)
         
-        # Perform a training step and get the absolute errors for the batch
-        abs_errors = self.train_step(
-            current_states_tuple,
-            actions_tensor,
-            rewards_tensor,
-            next_states_tuple,
-            dones_tensor,
-            is_weights_tensor
-        )
-        
-        # Update priorities in the replay buffer
-        self.replay_memory.batch_update(indices, abs_errors.numpy())
-        
+        self.train_step(states, actions, rewards, next_states, dones)
+
         if terminal_state:
             self.target_update_counter += 1
+        
         if self.target_update_counter > UPDATE_TARGET_EVERY:
             self.target_model.set_weights(self.model.get_weights())
             self.target_update_counter = 0
