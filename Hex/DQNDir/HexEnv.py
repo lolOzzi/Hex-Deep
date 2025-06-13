@@ -62,23 +62,25 @@ class HexEnv:
         return self.getObservation(player), self.turn_penalty, False
 
     def getObservation(self, player):
-        swap_available = 1.0 if player == 2 and self.hex.swap and not self.hex.first_turn else 0.0
-        swap_flag = np.array([swap_available])
-
-        swap_channel = np.zeros((self.SIZE, self.SIZE))
-
-        # The swap is only available for player 2, on their first move
-        # self.hex.swap is True and self.hex.first_turn is False
-        if swap_available:
-            if self.hex.first_move_pos is not None:
-                i, j = self.hex.first_move_pos
-                swap_channel[i, j] = 1
+        # Determine if swap is available
+        is_swap_available = player == 2 and self.hex.swap and not self.hex.first_turn
         
-        # Return the observation, transposed if player 2 for consistency.
         if player == 1:
-            board_state = np.stack([self.hex.p1Board, self.hex.p2Board, swap_channel], axis=-1)
-        else:
-            board_state = np.stack([self.hex.p2Board.T, self.hex.p1Board.T, swap_channel.T], axis=-1)
+            board_state = np.stack([self.hex.p1Board, self.hex.p2Board, 
+                                    np.zeros((self.SIZE, self.SIZE), dtype=np.int32)], axis=-1)
+        else: # Player 2, transpose the boards
+            board_state = np.stack([self.hex.p2Board.T, self.hex.p1Board.T, 
+                                    np.zeros((self.SIZE, self.SIZE), dtype=np.int32)], axis=-1)
+        
+        if is_swap_available and self.hex.first_move_pos is not None:
+            i, j = self.hex.first_move_pos
+            # Transpose coordinates for Player 2
+            if player == 2:
+                i, j = j, i
+            board_state[i, j, 2] = 1
+
+        swap_flag = np.array([1.0 if is_swap_available else 0.0])
+
         return (board_state, swap_flag)
 
     def resetRand(self, render=False):
@@ -92,14 +94,15 @@ class HexEnv:
             self.hex.placeMove(self.calc_op_move(), 1)
             return self.getObservation(self.player_num)
     
-    def stepRandWithResponse(self, action):
-        self.hex.placeMove(action, self.player_num)
-        if (self.hex.checkWin(self.player_num)):
-            return (self.getObservation(self.player_num), self.WIN_REWARD, True)
-        self.hex.placeMove(self.calc_op_move(), 1 if self.player_num==2 else 2 )
-        if (self.hex.checkWin(1 if self.player_num==2 else 2)):
-            return (self.getObservation(self.player_num), self.LOSS_PENALTY, True)
-        return (self.getObservation(self.player_num), self.turn_penalty, False)
+    def get_valid_actions_mask(self, player):
+        SIZE = self.SIZE
+        mask = np.zeros(SIZE * SIZE + 1, dtype=bool)
+        for i, j in self.hex.actionspace:
+            idx = i * SIZE + j if player == 1 else j * SIZE + i
+            mask[idx] = True
+        if player == 2 and self.hex.swap and not self.hex.first_turn and self.SWAP_ACTION is not None:
+                mask[self.SWAP_ACTION] = True
+        return mask
 
     def calc_op_move(self):
         return random.sample(list(self.hex.actionspace), 1)[0]
