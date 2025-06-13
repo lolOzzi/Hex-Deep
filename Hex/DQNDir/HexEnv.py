@@ -95,6 +95,17 @@ class HexEnv:
     def calc_op_move(self):
         return random.sample(list(self.hex.actionspace), 1)[0]
     
+    def get_valid_actions_mask(self, player):
+        SIZE = self.SIZE
+        mask = np.zeros(SIZE * SIZE + 1, dtype=bool)
+        for i, j in self.hex.actionspace:
+            idx = i * SIZE + j if player == 1 else j * SIZE + i
+            mask[idx] = True
+        if player == 2 and self.hex.swap and not self.hex.first_turn and self.SWAP_ACTION is not None:
+                mask[self.SWAP_ACTION] = True
+        return mask
+
+
     def render(self):
         self.fig, self.ax = self.hex.draw_board(self.fig, self.ax)
     

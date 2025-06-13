@@ -91,23 +91,16 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         player = env.player_num
         all_q_values = agent.get_qs(current_state)
 
-        # Get all valid actions for the current player
-        # Get valid placement actions (as flat indices)
-        if player == 1:
-            # For P1, the mapping is direct: (row, col) -> row * SIZE + col
-            valid_flat_actions = {i * env.SIZE + j for (i, j) in env.hex.actionspace}
-        else: # player == 2
-            # For P2, board is transposed, so map (row, col) -> col * SIZE + row
-            valid_flat_actions = {j * env.SIZE + i for (i, j) in env.hex.actionspace}
-        
-        # Add swap action if available for Player 2
-        if player == 2 and env.hex.swap and not env.hex.first_turn:
-            valid_flat_actions.add(env.SWAP_ACTION)
-        
+        valid_actions_mask_np = env.get_valid_actions_mask(player)
+        valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
+        masked_q_values = tf.where(
+            valid_actions_mask_tensor,
+            all_q_values,
+            -np.inf
+        )
 
-        # Get Q-values for valid actions and choose the best one
-        valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
-        action = max(valid_q_values, key=valid_q_values.get)
+        action_tensor = tf.argmax(masked_q_values)
+        action = action_tensor.numpy()
         
         op_state_pre_action = env.getObservation(3 - player)
         cp_state_pre_action = env.getObservation(player)
