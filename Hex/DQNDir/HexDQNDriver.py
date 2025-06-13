@@ -32,10 +32,9 @@ def loadModel(model_file_path):
             print("Starting from scratch.")
     else:
         print("No model file found, starting from scratch.")
-def loadPartialModel(model_file):
-    agent.load_partial_weights(model_file)
 
-loadModel(model_file)
+
+#loadModel(model_file)
 
 # Environment settings
 SIZE = 5
@@ -92,7 +91,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         player = env.player_num
         all_q_values = agent.get_qs(current_state)
 
-        # --- Get all valid actions for the current player ---
+        # Get all valid actions for the current player
         # Get valid placement actions (as flat indices)
         if player == 1:
             # For P1, the mapping is direct: (row, col) -> row * SIZE + col
@@ -101,7 +100,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
             # For P2, board is transposed, so map (row, col) -> col * SIZE + row
             valid_flat_actions = {j * env.SIZE + i for (i, j) in env.hex.actionspace}
         
-        # Add swap action if it's available for Player 2
+        # Add swap action if available for Player 2
         if player == 2 and env.hex.swap and not env.hex.first_turn:
             valid_flat_actions.add(env.SWAP_ACTION)
         
@@ -112,7 +111,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         
         op_state_pre_action = env.getObservation(3 - player)
         cp_state_pre_action = env.getObservation(player)
-        # --- Execute action and process results ---
+        #  Execute action and process results
         if self_play:
             new_state, reward, done = env.step(action, player)
 

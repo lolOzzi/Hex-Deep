@@ -11,7 +11,7 @@ from tensorflow.keras.layers import Input
 from DQNNFD import *
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-jupiter"
+MODEL_NAME = "5x5-simple"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
 MINIBATCH_SIZE = 128
@@ -23,6 +23,7 @@ UPDATE_TARGET_EVERY = 5
 class DQNAgent:
     def __init__(self, env, train=True):
         self.env = env
+        self.randomGen = np.random.default_rng(2)
         if (len(tf.config.experimental.list_physical_devices('GPU')) > 0):
             configure_gpu_optimizations()
         # Primary Model, gets trained every step
@@ -31,167 +32,104 @@ class DQNAgent:
         self.target_model = self.create_model()
         self.target_model.set_weights(self.model.get_weights())
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+        self.target_update_counter = 0
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
+            self.dataset_iterator = self._create_dataset_iterator()
         self.target_update_counter = 0
-        self.randomGen = np.random.default_rng(2)
+        
         self.lossfn = tf.keras.losses.MeanSquaredError()
 
-    
-    def residual_block(self, x, filters, block_num):
-        """
-        Defines a single residual block with two convolutional layers and a skip connection.
-        This structure helps in training deeper networks by mitigating vanishing gradients.
-        """
-        shortcut = x
+    def _replay_generator(self):
+        while True:
+            # Wait until the replay buffer is large enough to sample from
+            if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
+                time.sleep(0.1)
+                continue
 
-        # First convolutional path
-        y = Conv2D(filters, kernel_size=(3, 3), padding='same', name=f'res{block_num}_conv1')(x)
-        y = BatchNormalization(name=f'res{block_num}_bn1')(y)
-        y = ReLU(name=f'res{block_num}_relu1')(y)
+            indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
+            
+            try:
+                states, actions, rewards, next_states, dones = zip(*[self.replay_memory[i] for i in indices])
+            except IndexError:
+                continue
 
-        # Second convolutional path
-        y = Conv2D(filters, kernel_size=(3, 3), padding='same', name=f'res{block_num}_conv2')(y)
-        y = BatchNormalization(name=f'res{block_num}_bn2')(y)
+            def stack_components(pairs):
+                board, swap = zip(*pairs)
+                return np.array(board, dtype=np.float32), np.array(swap, dtype=np.float32)
 
-        # Add the shortcut to the output of the convolutional paths 
-        y = Add(name=f'res{block_num}_add')([shortcut, y])
-        # Final activation after the addition
-        y = ReLU(name=f'res{block_num}_relu2')(y)
+            current_states_board, current_states_swap = stack_components(states)
+            next_states_board, next_states_swap = stack_components(next_states)
+            
+            actions = np.array(actions, dtype=np.int32)
+            rewards = np.array(rewards, dtype=np.float32)
+            dones = np.array(dones, dtype=np.float32)
+            
+            yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
 
-        return y
-    
-    def create_old_model(self):
-        """
-        Creates the Deep Q-Network (DQN) model for a 5x5 Hex board.
-        The architecture is a deep residual network inspired by AlphaZero.
-        The final dense layers are replaced with Noisy Layers.
-        """
-        # --- Input Layer ---
-        board_input = Input(shape=(5, 5, 3), name='board_input')
-        swap_input = Input(shape=(1,), name='swap_input')
-
-        # --- Convolutional Body (ADD EXPLICIT NAMES) ---
-        x = Conv2D(filters=128, kernel_size=(3, 3), padding='same', name='initial_conv')(board_input)
-        x = BatchNormalization(name='initial_bn')(x)
-        x = ReLU(name='initial_relu')(x)
-        
-        # Also add names to the layers inside the residual blocks
-        for i in range(4):
-            x = self.residual_block(x, filters=128, block_num=i)
-
-        # Q-Values for Board Moves ---
-        board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
-                            activation='linear', name='board_q_values')(x)
-        board_q_flat = Flatten(name='board_q_flat')(board_q_head)
-
-
-
-        # Concat with swap 
-        swap_head_features = Flatten(name='swap_flatten')(x) # Name this flatten layer as well
-        swap_head_features = Concatenate()([swap_head_features, swap_input])
-        
-        # Noisy layers
-        swap_head = NoisyFactorisedDense(128, name='noisy_dense_1')(swap_head_features)
-        swap_head = ReLU()(swap_head)
-        swap_q_value = NoisyFactorisedDense(1, name='swap_q_value')(swap_head) # Output layer
-
-        # Combine and compile
-        final_output = Concatenate(name='final_q_values',  dtype='float32')([board_q_flat, swap_q_value])
-
-
-        model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
-        #model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
-        
-        return model
-    
+    def _create_dataset_iterator(self):
+       # The shapes are for a BATCH of data.
+        dataset = tf.data.Dataset.from_generator(
+            self._replay_generator,
+            output_signature=(
+                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 2), dtype=tf.float32), 
+                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.int32),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32),
+                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 2), dtype=tf.float32),
+                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
+                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32)
+            )
+        )
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        return iter(dataset)
     def create_model(self):
         """
-        Creates the Deep Q-Network (DQN) model for a 5x5 Hex board.
-        The architecture is a deep residual network inspired by AlphaZero.
-        The final dense layers are replaced with Noisy Layers.
+        Basic DQN for 5x5 Hex
         """
         # --- Input Layer ---
-        board_input = Input(shape=(5, 5, 3), name='board_input')
+        board_input = Input(shape=(5, 5, 2), name='board_input')
         swap_input = Input(shape=(1,), name='swap_input')
 
-        # --- Convolutional Body (ADD EXPLICIT NAMES) ---
-        x = Conv2D(filters=128, kernel_size=(3, 3), padding='same', name='initial_conv')(board_input)
-        x = BatchNormalization(name='initial_bn')(x)
-        x = ReLU(name='initial_relu')(x)
+        # field: 3x3
+        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
+                name='local_patterns')(board_input)
         
-        # Also add names to the layers inside the residual blocks
-        for i in range(4):
-            x = self.residual_block(x, filters=128, block_num=i)
-
-        # Q-Values for Board Moves
-        board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
-                            activation='linear', name='board_q_values')(x)
-        board_q_flat = Flatten(name='board_q_flat')(board_q_head)
-
-        # Concat with swap 
-        board_with_swap = Concatenate()([board_q_flat, swap_input])
+        # field: 5x5
+        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
+                name='global_patterns')(x)
         
-        # Noisy layers
-        head = NoisyFactorisedDense(128, name='noisy_dense')(board_with_swap)
-        head = ReLU()(head)
-        q_value = NoisyFactorisedDense(128, name='q_values')(head) # Output layer
-        q_value = ReLU()(q_value)
+        # May not be needed, mayhelp with complex patterns
+        x = Conv2D(128, kernel_size=3, padding='same', activation='relu',
+                    name='pattern_combinations')(x)
+        
+        # Flatten for decision making
+        x_flat = Flatten()(x)
 
-        # Combine and compile
-        final_output = NoisyFactorisedDense(self.env.ACTION_SPACE_SIZE, 
-                                            name='noisy_final_q_values', 
-                                            dtype='float32')(q_value)
+        # --- Concatenation ---
+        concatenated = Concatenate()([x_flat, swap_input])
+        
+        # Decision layers
+        d = NoisyFactorisedDense(256, name='decision_layer_1')(concatenated)
+        d = ReLU()(d)
+        d = NoisyFactorisedDense(128, name='decision_layer_2')(d)
+        d = ReLU()(d)
+        
+        # Output layer: Q-values for each position
+        final_output = Dense(self.env.ACTION_SPACE_SIZE, activation='linear', name='q_values')(d)
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
         model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
         
         return model
         
-
-
-
-    def load_partial_weights(self, old_model_path):
-        """
-        Loads weights from an old model into a new NoisyNet model,
-        transferring only the weights of layers that match by name.
-        """
-        print("Loading weights from old model...")
-        
-        # 1. Create an instance of the old model architecture
-        old_model = self.create_old_model()
-        
-        # 2. Load the weights from your file into the old architecture
-        old_model.load_weights(old_model_path)
-        
-        # 3. Transfer weights layer by layer
-        layers_transferred = 0
-        for layer in self.model.layers:
-            try:
-                # Find layer with the same name in the old model
-                old_layer = old_model.get_layer(name=layer.name)
-                
-                # Get and set weights
-                self.model.get_layer(name=layer.name).set_weights(old_layer.get_weights())
-                self.target_model.get_layer(name=layer.name).set_weights(old_layer.get_weights())
-                print(f"  - Transferred weights for layer: {layer.name}")
-                layers_transferred += 1
-            except ValueError:
-                # This will happen for the NoisyFactorisedDense layers, which is expected
-                print(f"  - Skipped layer (no match or different type): {layer.name}")
-
-        print(f"\nSuccessfully transferred weights for {layers_transferred} layers.")
-        if layers_transferred == 0:
-            print("Warning: No layers were transferred. Check if layer names are consistent between models.")
-
-
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
     
     @tf.function(
         input_signature=[
             (
-                tf.TensorSpec(shape=(5, 5, 3), dtype=tf.float32),
+                tf.TensorSpec(shape=(5, 5, 2), dtype=tf.float32),
                 tf.TensorSpec(shape=(1,), dtype=tf.float32)
             )
         ]
@@ -206,36 +144,16 @@ class DQNAgent:
             [board_state[np.newaxis, ...], swap_flag[np.newaxis, ...]], training=False
         )[0]
     
-    @tf.function(
-        input_signature=(
-            # The 'states' and 'next_states' tuples now have a 'None' for the batch dimension.
-            (tf.TensorSpec(shape=(None, 5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
-            
-            # Actions, rewards, and dones are now vectors of size 'None' (the batch size).
-            tf.TensorSpec(shape=(None,), dtype=tf.int32),
-            tf.TensorSpec(shape=(None,), dtype=tf.float32),
-            
-            (tf.TensorSpec(shape=(None, 5, 5, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 1), dtype=tf.float32)),
-            
-            tf.TensorSpec(shape=(None,), dtype=tf.float32)
-        )
-    )
-    def train_step(self, states, actions, rewards, next_states, dones, norm=False):
-        """
-        Performs a single, highly optimized training step.
-        This function is compiled into a static graph.
-        """
-        # Unpack states, which are tuples of (board, swap_flag)
+    @tf.function
+    def train_step(self, states, actions, rewards, next_states, dones):
+
         current_states_board, current_states_swap = states
         new_current_states_board, new_current_states_swap = next_states
 
         future_qs_list = self.target_model([new_current_states_board, new_current_states_swap], training=False)
         max_future_qs = tf.reduce_max(future_qs_list, axis=1)
-        if norm:
-            target_q_values = rewards + (1.0 - dones) * DISCOUNT * max_future_qs
-        else:
-            #Negated, becuase q's are for opponent.
-            target_q_values = rewards + (1.0 - dones) * DISCOUNT * (-max_future_qs)
+        # future q's negative because its op pov
+        target_q_values = rewards + (1.0 - dones) * DISCOUNT * (-max_future_qs)
 
         # Compute DQN Bellman‐error loss:
         #   target    = r + γ * max_a' Q_target(s', a')
@@ -247,56 +165,29 @@ class DQNAgent:
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
             loss = self.lossfn(target_q_values, predicted_q_values)
             
-            # Loss scaled, for use in mixed precesion calcs
-            scaled_loss = self.model.optimizer.get_scaled_loss(loss)
+            # If using mixed precision, scale the loss
+            if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+                scaled_loss = self.model.optimizer.get_scaled_loss(loss)
+            
+        if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+            scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
+            gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
+        else:
+            gradients = tape.gradient(loss, self.model.trainable_variables)
         
-        # Calculate gradients using the scaled loss.
-        scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
-        
-        # Unscale the gradients back to their original magnitude before applying them.
-        gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
-        
-        # Apply the unscaled gradients to the model's variables.
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
     def train(self, terminal_state, step):
-        """
-        Orchestrates training using a high-performance tf.data input pipeline.
-        """
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
-        # Sample a minibatch from the replay memory
-        minibatch_indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
-        minibatch = [self.replay_memory[i] for i in minibatch_indices]
+        states, actions, rewards, next_states, dones = next(self.dataset_iterator)
+        self.train_step(states, actions, rewards, next_states, dones)
 
-        # Unzip the minibatch
-        states, actions, rewards, next_states, dones = zip(*minibatch)
-
-        # Separate board and swap_flag from states and next_states
-        current_states_board, current_states_swap = zip(*states)
-        new_current_states_board, new_current_states_swap = zip(*next_states)
-
-        # Convert to tensors
-        current_states_board = tf.convert_to_tensor(np.array(current_states_board), dtype=tf.float32)
-        current_states_swap = tf.convert_to_tensor(np.array(current_states_swap), dtype=tf.float32)
-        actions = tf.convert_to_tensor(np.array(actions), dtype=tf.int32)
-        rewards = tf.convert_to_tensor(np.array(rewards), dtype=tf.float32)
-        new_current_states_board = tf.convert_to_tensor(np.array(new_current_states_board), dtype=tf.float32)
-        new_current_states_swap = tf.convert_to_tensor(np.array(new_current_states_swap), dtype=tf.float32)
-        dones = tf.convert_to_tensor(np.array(dones), dtype=tf.float32)
-
-        # Call the train_step function with the prepared tensors
-        self.train_step(
-            (current_states_board, current_states_swap),
-            actions,
-            rewards,
-            (new_current_states_board, new_current_states_swap),
-            dones
-        )
-
+        # Periodically update the target model
         if terminal_state:
             self.target_update_counter += 1
+        
         if self.target_update_counter > UPDATE_TARGET_EVERY:
             self.target_model.set_weights(self.model.get_weights())
             self.target_update_counter = 0
@@ -310,8 +201,6 @@ def configure_gpu_optimizations():
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         tf.config.experimental.set_memory_growth(gpus[0], True)
-    
-    # Enable XLA compilation
     tf.config.optimizer.set_jit(True)
     
-    print("RTX 5070 Ti optimizations enabled!")
+    print("GPU optimizations enabled!")

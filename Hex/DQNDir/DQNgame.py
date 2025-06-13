@@ -143,7 +143,6 @@ class Hex_Game:
                 return
 
             # Case B: P2 declines to swap by placing a piece elsewhere
-
         
         # --- Generic move placement for all other turns ---
         if pos not in self.actionspace:
