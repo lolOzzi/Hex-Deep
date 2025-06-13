@@ -12,7 +12,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____2.70avg____0.00min__1749764577.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.45avg____0.00min__1749794963.keras'
 #model_file = None
 
 
