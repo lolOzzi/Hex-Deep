@@ -217,7 +217,7 @@ class DQNAgent:
             )
             actions_np = np.array(actions, dtype=np.int32)
             rewards_np = np.array(rewards, dtype=np.float32)
-            dones_np = np.array(dones, dtype=np.bool)
+            dones_np = np.array(dones, dtype=np.bool_)
             is_weights_np = np.array(is_weights, dtype=np.float32)
             indices_np = np.array(indices, dtype=np.int32)
 
