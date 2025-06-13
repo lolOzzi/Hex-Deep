@@ -13,8 +13,8 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-#model_file = 'models/5x5-Hybrid-GNN-ConvNet-SwapFlag_____5.00max____3.80avg____0.00min__1749681670.keras'
-model_file = None
+model_file = 'models/5x5-Hybrid_____5.00max____2.60avg____0.00min__1749817832.keras'
+#model_file = None
 
 
 def loadModel(model_file):
