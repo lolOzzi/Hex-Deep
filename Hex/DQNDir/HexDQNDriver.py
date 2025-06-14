@@ -12,7 +12,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____2.45avg____0.00min__1749794963.keras'
+model_file = 'models/5x5-simple_____5.00max____2.55avg____0.00min__1749928566.keras'
 #model_file = None
 
 
@@ -34,12 +34,12 @@ def loadModel(model_file_path):
         print("No model file found, starting from scratch.")
 
 
-#loadModel(model_file)
+loadModel(model_file)
 
 # Environment settings
 SIZE = 5
 
-EPISODES = 300_000
+EPISODES = 900_000
 SELF_PLAY_START_EPISODE = 2000
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = -0.05
