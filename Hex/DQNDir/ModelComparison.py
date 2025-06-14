@@ -83,12 +83,17 @@ def run_ai_vs_ai_match(model_path_1, model_path_2):
         current_agent = agents[player_num]
 
         all_q_values = current_agent.get_qs(current_state) #
-        if (player_num==1):
-            valid_flat_actions = [i * env.SIZE + j for (i, j) in env.hex.actionspace]
-        else:
-            valid_flat_actions = [i * env.SIZE + j for (j, i) in env.hex.actionspace] #
-        valid_q_values = {action: all_q_values[action] for action in valid_flat_actions}
-        action = max(valid_q_values, key=valid_q_values.get)
+
+        valid_actions_mask_np = env.get_valid_actions_mask(player_num)
+        valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
+        masked_q_values = tf.where(
+            valid_actions_mask_tensor,
+            all_q_values,
+            -np.inf
+        )
+
+        action_tensor = tf.argmax(masked_q_values)
+        action = action_tensor.numpy()
         
         row, col = divmod(action, env.SIZE)
         print("debug: ", row, col)
@@ -143,14 +148,16 @@ def run_human_vs_ai_match(ai_model_path, human_player_num):
             print(f"\nAI's turn (Player {ai_player_num})...")
             all_q_values = ai_agent.get_qs(current_state) 
             
-            # Get valid actions based on the current player
-            if player_num == 1:
-                valid_flat_actions = {i * env.SIZE + j for (i, j) in env.hex.actionspace}
-            else: # player == 2
-                valid_flat_actions = {j * env.SIZE + i for (i, j) in env.hex.actionspace}
+            valid_actions_mask_np = env.get_valid_actions_mask(player_num)
+            valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
+            masked_q_values = tf.where(
+                valid_actions_mask_tensor,
+                all_q_values,
+                -np.inf
+            )
 
-            valid_q_values = {a: all_q_values[a] for a in valid_flat_actions}
-            action = max(valid_q_values, key=valid_q_values.get)
+            action_tensor = tf.argmax(masked_q_values)
+            action = action_tensor.numpy()
             
             # For display purposes, convert AI action back to a tuple
             row, col = divmod(action, env.SIZE)
