@@ -174,7 +174,7 @@ class DQNAgent:
             
             # If using mixed precision, scale the loss
             if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
-                tf.print("DEBUG: Optimizer is", self.model.optimizer) 
+                print("DEBUG: Optimizer is", self.model.optimizer) 
                 scaled_loss = self.model.optimizer.get_scaled_loss(loss)
             
         if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
