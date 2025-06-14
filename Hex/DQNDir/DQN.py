@@ -150,6 +150,13 @@ class DQNAgent:
         current_states_board, current_states_swap = states
         new_current_states_board, new_current_states_swap = next_states
 
+        compute_dtype = self.model.compute_dtype
+
+        # Cast the input tensors to match the model's dtype
+        rewards = tf.cast(rewards, dtype=compute_dtype)
+        dones = tf.cast(dones, dtype=compute_dtype)
+
+
         future_qs_list = self.target_model([new_current_states_board, new_current_states_swap], training=False)
         max_future_qs = tf.reduce_max(future_qs_list, axis=1)
         # future q's negative because its op pov
