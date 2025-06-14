@@ -108,7 +108,7 @@ class Hex_Game:
             self.p1_parent[self.P1_BOTTOM] = self.P1_BOTTOM
             self.p1_rank[self.P1_BOTTOM] = 0
 
-    def placeMove(self, pos, player, is_swap_action=False):
+    def placeMove(self, pos, player):
         """
         Places a stone for a player, handling the special cases for the first two moves
         (including the custom swap rule) and all subsequent moves.
@@ -130,7 +130,7 @@ class Hex_Game:
             self.swap = False  # Swap opportunity is now used/declined
 
             # Case A: P2 swaps using the dedicated swap action
-            if is_swap_action:
+            if pos==self.first_move_pos:
                 swapped_pos = (self.first_move_pos[1], self.first_move_pos[0])
                 self._undo_p1_first_move() # Call the new helper method
                 self.actionspace.add(self.first_move_pos)
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     hg_full.placeMove((0, 0), 1)   # first move
     player = 2
     while hg_full.actionspace:
-        mv = random.choice(hg_full.actionspace)
+        mv = random.choice(list(hg_full.actionspace))
         hg_full.placeMove(mv, player)
         player = 1 if player == 2 else 2
     print("\nFinal posMoves (should be 0):", hg_full.posMoves,
@@ -285,5 +285,5 @@ if __name__ == "__main__":
     print(hg.checkWin(1))  # True
 
 
-    hg.draw_board(size=1, dims=hg.BOARD_SIZE)
+    hg.draw_board(size=1)
 

@@ -117,7 +117,7 @@ class DQNAgent:
         d = ReLU()(d)
         
         # Output layer: Q-values for each position
-        final_output = Dense(self.env.ACTION_SPACE_SIZE, activation='linear', name='q_values')(d)
+        final_output = Dense(self.env.SIZE*self.env.SIZE, activation='linear', name='q_values')(d)
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
         model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
         

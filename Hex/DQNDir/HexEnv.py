@@ -9,7 +9,7 @@ class HexEnv:
     WIN_REWARD = 5
     LOSS_PENALTY = -5
     OBSERVATION_SPACE_VALUES = (SIZE, SIZE, 2)
-    ACTION_SPACE_SIZE = SIZE*SIZE + 1
+    ACTION_SPACE_SIZE = SIZE*SIZE
     SWAP_ACTION = SIZE*SIZE # The index for the swap action
     
     def __init__(self):
@@ -48,7 +48,7 @@ class HexEnv:
             # Player 2's board is transposed, so we must un-transpose the move.
             move = (col, row) if player == 2 else (row, col)
 
-            if move in self.hex.actionspace:
+            if move in self.hex.actionspace or move == self.hex.first_move_pos:
                 self.hex.placeMove(pos=move, player=player)
             else:
                  raise Exception("Illegal move:", move, "not available" )
@@ -97,12 +97,15 @@ class HexEnv:
     
     def get_valid_actions_mask(self, player):
         SIZE = self.SIZE
-        mask = np.zeros(SIZE * SIZE + 1, dtype=bool)
+        mask = np.zeros(SIZE * SIZE, dtype=bool)
         for i, j in self.hex.actionspace:
             idx = i * SIZE + j if player == 1 else j * SIZE + i
             mask[idx] = True
+
         if player == 2 and self.hex.swap and not self.hex.first_turn and self.SWAP_ACTION is not None:
-                mask[self.SWAP_ACTION] = True
+                i, j = self.hex.first_move_pos 
+                idx = i * SIZE + j if player == 1 else j * SIZE + i
+                mask[idx] = True
         return mask
 
 
