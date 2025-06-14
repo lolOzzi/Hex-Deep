@@ -172,16 +172,7 @@ class DQNAgent:
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
             loss = self.lossfn(target_q_values, predicted_q_values)
             
-            # If using mixed precision, scale the loss
-            if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
-                print("DEBUG: Optimizer is", self.model.optimizer) 
-                scaled_loss = self.model.optimizer.get_scaled_loss(loss)
-            
-        if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
-            scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
-            gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
-        else:
-            gradients = tape.gradient(loss, self.model.trainable_variables)
+        gradients = tape.gradient(loss, self.model.trainable_variables)
         
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
