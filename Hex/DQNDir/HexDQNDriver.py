@@ -13,7 +13,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-Hybrid-PER-Optimized_____5.00max____3.00avg____0.00min__1749830549.keras'
+model_file = 'models/5x5-Hybrid-PER-Optimized_____5.00max____3.05avg____0.00min__1749917883.keras'
 #model_file = None
 
 
