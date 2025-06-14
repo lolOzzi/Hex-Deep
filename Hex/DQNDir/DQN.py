@@ -30,7 +30,12 @@ class DQNAgent:
         # Target Model, we .predict this one
         self.target_model = self.create_model()
         self.target_model.set_weights(self.model.get_weights())
+
+
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+        self.actual_swap_replay_memory = deque(maxlen=2_500) 
+        self.potential_swap_replay_memory = deque(maxlen=5_000)
+        
         self.target_update_counter = 0
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
@@ -121,7 +126,7 @@ class DQNAgent:
                                             name='noisy_final_q_values', 
                                             dtype='float32')(q_value)
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
-        model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+        model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.0015))
         
         return model
 
@@ -161,6 +166,10 @@ class DQNAgent:
 
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
+    def update_actual_swap_memory(self, transition):
+        self.actual_swap_replay_memory.append(transition)
+    def update_potential_swap_memory(self, transition):
+        self.potential_swap_replay_memory.append(transition)
     
     @tf.function(
         input_signature=[
@@ -236,32 +245,58 @@ class DQNAgent:
             self.target_update_counter = 0
     
     def _replay_generator(self):
+        """
+        A generator that creates mixed-experience minibatches for training.
+
+        It samples from three different buffers to ensure that rare but critical
+        events (like swapping) are represented in the training data.
+        """
         while True:
-            # Wait until the replay buffer is large enough to sample from
             if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
                 time.sleep(0.1)
                 continue
+            actual_swap_bs = MINIBATCH_SIZE // 6      # e.g., ~16% of the batch for actual swaps.
+            potential_swap_bs = MINIBATCH_SIZE // 4  # e.g., ~25% for potential swap decisions.
+            regular_bs = MINIBATCH_SIZE - actual_swap_bs - potential_swap_bs
+            regular_samples = random.sample(self.replay_memory, regular_bs)
 
-            indices = np.random.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
-            
+            # Sample from the potential swap buffer if it's sufficiently populated.
+            if len(self.potential_swap_replay_memory) > potential_swap_bs:
+                potential_samples = random.sample(self.potential_swap_replay_memory, potential_swap_bs)
+            else:
+                # If not enough, take what's available.
+                potential_samples = list(self.potential_swap_replay_memory)
+
+            # Sample from the actual swap buffer if it's sufficiently populated.
+            if len(self.actual_swap_replay_memory) > actual_swap_bs:
+                actual_samples = random.sample(self.actual_swap_replay_memory, actual_swap_bs)
+            else:
+                actual_samples = list(self.actual_swap_replay_memory)
+
+            minibatch = regular_samples + potential_samples + actual_samples
+
+            missing_samples_count = MINIBATCH_SIZE - len(minibatch)
+            if missing_samples_count > 0:
+                minibatch.extend(random.sample(self.replay_memory, missing_samples_count))
+
             try:
-                states, actions, rewards, next_states, dones = zip(*[self.replay_memory[i] for i in indices])
-            except IndexError:
+                states, actions, rewards, next_states, dones = zip(*minibatch)
+            except (IndexError, ValueError):
                 continue
 
+            # Helper function to stack the state components (board and swap flag) into numpy arrays.
             def stack_components(pairs):
                 board, swap = zip(*pairs)
                 return np.array(board, dtype=np.float32), np.array(swap, dtype=np.float32)
 
             current_states_board, current_states_swap = stack_components(states)
             next_states_board, next_states_swap = stack_components(next_states)
-            
+
             actions = np.array(actions, dtype=np.int32)
             rewards = np.array(rewards, dtype=np.float32)
             dones = np.array(dones, dtype=np.float32)
-            
-            yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
 
+            yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
     def _create_dataset_iterator(self):
     # The shapes are for a BATCH of data.
         dataset = tf.data.Dataset.from_generator(

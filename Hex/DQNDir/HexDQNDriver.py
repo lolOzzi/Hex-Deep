@@ -5,37 +5,20 @@ import tensorflow as tf
 import time
 import random
 from tqdm import tqdm
-
+from util import *
 
 print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____2.80avg____0.00min__1749852737.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.75avg____0.00min__1749901560.keras'
 #model_file = None
 
 
-def loadModel(model_file_path):
 
-    if model_file_path:
-        print(f"Loading model from: {model_file_path}")
-        try:
-            agent.model = tf.keras.models.load_model(
-                model_file_path,
-                custom_objects={'NoisyFactorisedDense': NoisyFactorisedDense}
-            )
-            agent.target_model.set_weights(agent.model.get_weights())
-            print("Model loaded successfully.")
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Starting from scratch.")
-    else:
-        print("No model file found, starting from scratch.")
-def loadPartialModel(model_file):
-    agent.load_partial_weights(model_file)
-
-loadModel(model_file)
+loadModel(agent, model_file)
+reset_noise_in_model(agent)
 
 # Environment settings
 SIZE = 5
@@ -105,6 +88,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         
         op_state_pre_action = env.getObservation(3 - player)
         cp_state_pre_action = env.getObservation(player)
+        is_pot_swap = (player == 2 and env.hex.swap and not env.hex.first_turn)
         # --- Execute action and process results ---
         if self_play:
             new_state, reward, done = env.step(action, player)
@@ -121,8 +105,13 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 episode_reward2 += reward
 
             
-            
-            agent.update_replay_memory((current_state, action, reward, op_state_post_action, done))
+            std_transition = (current_state, action, reward, op_state_post_action, done)
+            if (is_pot_swap):
+                agent.update_potential_swap_memory(std_transition)
+                if (action==env.SWAP_ACTION):
+                    agent.update_actual_swap_memory(std_transition)
+
+            agent.update_replay_memory(std_transition)
             agent.train(done, step)
 
             # If the game ended, punish the loser
