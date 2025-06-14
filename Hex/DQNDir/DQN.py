@@ -167,7 +167,7 @@ class DQNAgent:
         #   predicted = Q(s, a)
         #   loss      = mean( (target - predicted)^2 )
         with tf.GradientTape() as tape:
-            one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE)
+            one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE, dtype=compute_dtype)
             q_values = self.model([current_states_board, current_states_swap], training=True)
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
             loss = self.lossfn(target_q_values, predicted_q_values)

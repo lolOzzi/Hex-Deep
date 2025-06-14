@@ -63,7 +63,7 @@ class HexEnv:
 
     def getObservation(self, player):
         swap_available = 1.0 if player == 2 and self.hex.swap and not self.hex.first_turn else 0.0
-        swap_flag = np.array([swap_available])
+        swap_flag = np.array([swap_available], dtype=np.float32)
         
         # Return the observation, transposed if player 2 for consistency.
         if player == 1:
