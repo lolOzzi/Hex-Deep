@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5-jupiter_____5.00max____2.45avg____0.00min__1749794963.keras"  # Player 1 Model
-MODEL_2_PATH = "models/5x5-jupiter_____5.00max____2.45avg____0.00min__1749794963.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5-simple_____5.00max____0.10avg____0.00min__1750006734.keras"  # Player 1 Model
+MODEL_2_PATH = "models/5x5-simple_____5.00max____0.10avg____0.00min__1750006734.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
@@ -84,7 +84,7 @@ def run_ai_vs_ai_match(model_path_1, model_path_2):
 
         all_q_values = current_agent.get_qs(current_state) #
 
-        valid_actions_mask_np = env.get_valid_actions_mask(player)
+        valid_actions_mask_np = env.get_valid_actions_mask(player_num)
         valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
         masked_q_values = tf.where(
             valid_actions_mask_tensor,
@@ -148,7 +148,7 @@ def run_human_vs_ai_match(ai_model_path, human_player_num):
             print(f"\nAI's turn (Player {ai_player_num})...")
             all_q_values = ai_agent.get_qs(current_state) 
             
-            valid_actions_mask_np = env.get_valid_actions_mask(player)
+            valid_actions_mask_np = env.get_valid_actions_mask(player_num)
             valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
             masked_q_values = tf.where(
                 valid_actions_mask_tensor,
