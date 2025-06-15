@@ -5,7 +5,8 @@ import tensorflow as tf
 import time
 import random
 from tqdm import tqdm
-
+import os
+import glob
 
 print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
 env = HexEnv()
@@ -15,6 +16,24 @@ agent = DQNAgent(env)
 model_file = 'models/5x5-simple_____5.00max____2.70avg____0.00min__1749991339.keras'
 #model_file = None
 
+
+def get_latest_model_file():
+    """
+    Finds the most recently modified .keras model file in the 'models/' directory.
+    """
+    # Create the models directory if it doesn't exist
+    os.makedirs('models', exist_ok=True)
+    
+    # Get a list of all .keras files in the directory
+    list_of_files = glob.glob('models/*.keras') 
+    
+    if not list_of_files:
+        # If no model files are found, return None
+        return None
+    
+    # Find the file with the latest modification time
+    latest_file = max(list_of_files, key=os.path.getmtime)
+    return latest_file
 
 def loadModel(model_file_path):
 
@@ -34,7 +53,7 @@ def loadModel(model_file_path):
         print("No model file found, starting from scratch.")
 
 
-loadModel(model_file)
+loadModel(get_latest_model_file())
 
 # Environment settings
 SIZE = 5
