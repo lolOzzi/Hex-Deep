@@ -12,18 +12,18 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____2.75avg____0.00min__1749901560.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.65avg____0.00min__1749937684.keras'
 #model_file = None
 
 
 
 loadModel(agent, model_file)
-reset_noise_in_model(agent)
+#reset_noise_in_model(agent)
 
 # Environment settings
 SIZE = 5
 
-EPISODES = 200_000
+EPISODES = 900_000
 SELF_PLAY_START_EPISODE = 500
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = 0

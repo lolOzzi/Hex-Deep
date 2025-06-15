@@ -255,8 +255,8 @@ class DQNAgent:
             if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
                 time.sleep(0.1)
                 continue
-            actual_swap_bs = MINIBATCH_SIZE // 6      # e.g., ~16% of the batch for actual swaps.
-            potential_swap_bs = MINIBATCH_SIZE // 4  # e.g., ~25% for potential swap decisions.
+            actual_swap_bs = MINIBATCH_SIZE // 7     
+            potential_swap_bs = MINIBATCH_SIZE // 6  
             regular_bs = MINIBATCH_SIZE - actual_swap_bs - potential_swap_bs
             regular_samples = random.sample(self.replay_memory, regular_bs)
 
