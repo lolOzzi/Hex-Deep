@@ -125,7 +125,7 @@ class DQNAgent:
             q_values = self.model([current_states_board, current_states_swap], training=True)
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
 
-            element_wise_loss = self.lossfn(target_q_values, predicted_q_values, dtype=compute_dtype)
+            element_wise_loss = tf.cast(self.lossfn(target_q_values, predicted_q_values), dtype=compute_dtype)
             weighted_loss = element_wise_loss * is_weights
             loss = tf.reduce_mean(weighted_loss)
             
