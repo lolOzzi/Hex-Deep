@@ -161,7 +161,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                     reward = env.LOSS_PENALTY # Agent lost
                     agent.update_replay_memory((current_state, action, reward, new_state, True))
                 else:
-                    agent.update_replay_memory((current_state, action, reward, final_state_op, False))
+                    agent.update_replay_memory((current_state, action, reward, final_state, False))
                 # The 'new_state' for the agent's transition is after the opponent has moved
 
                 agent.train(done, step)
