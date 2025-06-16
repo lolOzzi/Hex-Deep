@@ -2,19 +2,19 @@ import time
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, ReLU, Add, Concatenate, BatchNormalization
 import numpy as np
-from collections import deque
 from TB import ModifiedTensorBoard
 from HexEnv import *
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input
 from DQNNFD import *
+from PER import PERBuffer
 
 REPLAY_MEMORY_SIZE = 50_000
-MODEL_NAME = "5x5-simple"
-NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
+MODEL_NAME = "5x5-simple-PER"
+NORMALISATION_VALUE = 1
 MIN_REPLAY_MEMORY_SIZE = 1_000
-MINIBATCH_SIZE = 128
+MINIBATCH_SIZE = 64
 DISCOUNT = 0.995
 UPDATE_TARGET_EVERY = 5
 
@@ -31,59 +31,14 @@ class DQNAgent:
         # Target Model, we .predict this one
         self.target_model = self.create_model()
         self.target_model.set_weights(self.model.get_weights())
-        self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+        self.replay_memory = PERBuffer(REPLAY_MEMORY_SIZE)
         self.target_update_counter = 0
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
-            self.dataset_iterator = self._create_dataset_iterator()
-        self.target_update_counter = 0
         
         self.lossfn = tf.keras.losses.MeanSquaredError()
 
-    def _replay_generator(self):
-        while True:
-            # Wait until the replay buffer is large enough to sample from
-            if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
-                time.sleep(0.1)
-                continue
-
-            indices = self.randomGen.choice(len(self.replay_memory), MINIBATCH_SIZE, replace=False)
-            
-            try:
-                states, actions, rewards, next_states, dones = zip(*[self.replay_memory[i] for i in indices])
-            except IndexError:
-                continue
-
-            def stack_components(pairs):
-                board, swap = zip(*pairs)
-                return np.array(board, dtype=np.float32), np.array(swap, dtype=np.float32)
-
-            current_states_board, current_states_swap = stack_components(states)
-            next_states_board, next_states_swap = stack_components(next_states)
-            
-            actions = np.array(actions, dtype=np.int32)
-            rewards = np.array(rewards, dtype=np.float32)
-            dones = np.array(dones, dtype=np.float32)
-            
-            yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
-
-    def _create_dataset_iterator(self):
-       # The shapes are for a BATCH of data.
-        dataset = tf.data.Dataset.from_generator(
-            self._replay_generator,
-            output_signature=(
-                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 2), dtype=tf.float32), 
-                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
-                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.int32),
-                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32),
-                (tf.TensorSpec(shape=(MINIBATCH_SIZE, self.env.SIZE, self.env.SIZE, 2), dtype=tf.float32),
-                 tf.TensorSpec(shape=(MINIBATCH_SIZE, 1), dtype=tf.float32)),
-                tf.TensorSpec(shape=(MINIBATCH_SIZE,), dtype=tf.float32)
-            )
-        )
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
-        return iter(dataset)
     def create_model(self):
         """
         Basic DQN for 5x5 Hex
@@ -124,7 +79,7 @@ class DQNAgent:
         return model
         
     def update_replay_memory(self, transition):
-        self.replay_memory.append(transition)
+        self.replay_memory.store(transition)
     
     @tf.function(
         input_signature=[
@@ -145,16 +100,15 @@ class DQNAgent:
         )[0]
     
     @tf.function
-    def train_step(self, states, actions, rewards, next_states, dones):
+    def train_step(self, states, actions, rewards, next_states, dones, is_weights):
 
         current_states_board, current_states_swap = states
         new_current_states_board, new_current_states_swap = next_states
 
         compute_dtype = self.model.compute_dtype
-
-        # Cast the input tensors to match the model's dtype
         rewards = tf.cast(rewards, dtype=compute_dtype)
         dones = tf.cast(dones, dtype=compute_dtype)
+        is_weights = tf.cast(is_weights, dtype=compute_dtype)
 
 
         future_qs_list = self.target_model([new_current_states_board, new_current_states_swap], training=False)
@@ -170,18 +124,48 @@ class DQNAgent:
             one_hot_actions = tf.one_hot(tf.cast(actions, tf.int32), self.env.ACTION_SPACE_SIZE, dtype=compute_dtype)
             q_values = self.model([current_states_board, current_states_swap], training=True)
             predicted_q_values = tf.reduce_sum(q_values * one_hot_actions, axis=1)
-            loss = self.lossfn(target_q_values, predicted_q_values)
+
+            element_wise_loss = self.lossfn(target_q_values, predicted_q_values)
+            weighted_loss = element_wise_loss * is_weights
+            loss = tf.reduce_mean(weighted_loss)
             
         gradients = tape.gradient(loss, self.model.trainable_variables)
         
         self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        abs_errors = tf.abs(target_q_values - predicted_q_values)
+        return abs_errors
 
     def train(self, terminal_state, step):
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
+        mini_batch, tree_indices, is_weights = self.replay_memory.sample(MINIBATCH_SIZE)
 
-        states, actions, rewards, next_states, dones = next(self.dataset_iterator)
-        self.train_step(states, actions, rewards, next_states, dones)
+        # Unpack the batch and format for TensorFlow
+        states, actions, rewards, next_states, dones = zip(*mini_batch)
+        def stack_components(pairs):
+            board, swap = zip(*pairs)
+            return np.array(board, dtype=np.float32), np.array(swap, dtype=np.float32)
+
+        current_states_board, current_states_swap = stack_components(states)
+        next_states_board, next_states_swap = stack_components(next_states)
+        
+        actions = np.array(actions, dtype=np.int32)
+        rewards = np.array(rewards, dtype=np.float32)
+        dones = np.array(dones, dtype=np.float32)
+
+        # Perform a training step and get the errors
+        abs_errors = self.train_step(
+            (current_states_board, current_states_swap), 
+            actions, 
+            rewards, 
+            (next_states_board, next_states_swap), 
+            dones,
+            is_weights
+        )
+        
+        # Update the priorities in the replay buffer
+        self.replay_memory.batch_update(tree_indices, abs_errors.numpy())
+
 
         # Periodically update the target model
         if terminal_state:
