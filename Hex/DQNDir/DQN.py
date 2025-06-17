@@ -14,7 +14,7 @@ REPLAY_MEMORY_SIZE = 50_000
 MODEL_NAME = "5x5-jupiter"
 NORMALISATION_VALUE = 1  # maybe not, 255 if rgb.
 MIN_REPLAY_MEMORY_SIZE = 1_000
-MINIBATCH_SIZE = 128
+MINIBATCH_SIZE = 64
 DISCOUNT = 0.995
 UPDATE_TARGET_EVERY = 5
 
@@ -72,23 +72,34 @@ class DQNAgent:
     def create_old_model(self):
         board_input = Input(shape=(5, 5, 3), name='board_input')
         swap_input = Input(shape=(1,), name='swap_input')
+
+        # Convolutional Body
         x = Conv2D(filters=128, kernel_size=(3, 3), padding='same', name='initial_conv')(board_input)
         x = BatchNormalization(name='initial_bn')(x)
         x = ReLU(name='initial_relu')(x)
         
+        # Also add names to the layers inside the residual blocks
         for i in range(4):
             x = self.residual_block(x, filters=128, block_num=i)
 
+        # Q-Values for Board Moves
         board_q_head = Conv2D(filters=1, kernel_size=(1, 1), padding='same',
                             activation='linear', name='board_q_values')(x)
         board_q_flat = Flatten(name='board_q_flat')(board_q_head)
-        swap_head_features = Flatten(name='swap_flatten')(x)
-        swap_head_features = Concatenate()([swap_head_features, swap_input])
-        swap_head = NoisyFactorisedDense(128, name='noisy_dense_1')(swap_head_features)
-        swap_head = ReLU()(swap_head)
-        swap_q_value = NoisyFactorisedDense(1, name='swap_q_value')(swap_head) 
 
-        final_output = Concatenate(name='final_q_values',  dtype='float32')([board_q_flat, swap_q_value])
+        board_with_swap = Concatenate()([board_q_flat, swap_input])
+        
+        # Noisy layers
+        head = NoisyFactorisedDense(128, name='noisy_dense')(board_with_swap)
+        head = ReLU()(head)
+        q_value = NoisyFactorisedDense(128, name='q_values')(head) # Output layer
+        q_value = ReLU()(q_value)
+
+        # Combine and compile
+        final_output = NoisyFactorisedDense(self.env.ACTION_SPACE_SIZE, 
+                                            name='noisy_final_q_values', 
+                                            dtype='float32')(q_value)
+        #model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
         return model
     
@@ -126,7 +137,7 @@ class DQNAgent:
                                             name='noisy_final_q_values', 
                                             dtype='float32')(q_value)
         model = Model(inputs=[board_input, swap_input], outputs=final_output, name='hex_dqn_5x5_noisy')
-        model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=0.0015))
+        model.compile(loss="mse", optimizer=tf.keras.mixed_precision.LossScaleOptimizer(tf.keras.optimizers.Adam(learning_rate=0.001)))
         
         return model
 
@@ -219,6 +230,7 @@ class DQNAgent:
             
             # If using mixed precision, scale the loss
             if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+                print("It is a lossscaleOptimizer")
                 scaled_loss = self.model.optimizer.get_scaled_loss(loss)
             
         if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
@@ -255,8 +267,8 @@ class DQNAgent:
             if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
                 time.sleep(0.1)
                 continue
-            actual_swap_bs = MINIBATCH_SIZE // 7     
-            potential_swap_bs = MINIBATCH_SIZE // 6  
+            actual_swap_bs = 0  
+            potential_swap_bs = 0
             regular_bs = MINIBATCH_SIZE - actual_swap_bs - potential_swap_bs
             regular_samples = random.sample(self.replay_memory, regular_bs)
 

@@ -25,21 +25,32 @@ def reset_noise_in_model(agent, new_sigma_init=0.5):
     print("Noise parameter reset complete.")
 
 
-def loadModel(agent, model_file_path):
-
+def loadModel(agent, model_file_path, new_learning_rate=0.0015): # Add new_learning_rate parameter
     if model_file_path:
         print(f"Loading model from: {model_file_path}")
         try:
-            agent.model = tf.keras.models.load_model(
+
+            loaded_model = tf.keras.models.load_model(
                 model_file_path,
                 custom_objects={'NoisyFactorisedDense': NoisyFactorisedDense}
             )
+            
+            agent.model.set_weights(loaded_model.get_weights())
+
+            agent.model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=new_learning_rate))
+            
             agent.target_model.set_weights(agent.model.get_weights())
-            print("Model loaded successfully.")
+            
+            print("Model loaded and recompiled successfully with new learning rate.")
+            
         except Exception as e:
             print(f"Error loading model: {e}")
-            print("Starting from scratch.")
+            print("Starting from scratch (or original compile learning rate).")
+            agent.model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=new_learning_rate))
+            agent.target_model.set_weights(agent.model.get_weights())
     else:
         print("No model file found, starting from scratch.")
-def loadPartialModel(model_file):
+        agent.model.compile(loss="mse", optimizer=tf.keras.optimizers.Adam(learning_rate=new_learning_rate))
+        agent.target_model.set_weights(agent.model.get_weights())
+def loadPartialModel(agent, model_file):
     agent.load_partial_weights(model_file)

@@ -51,6 +51,10 @@ class HexEnv:
             if move in self.hex.actionspace:
                 self.hex.placeMove(pos=move, player=player)
             else:
+                 print("Player", player)
+                 print(self.hex.board)
+                 print(move)
+                 print(self.get_valid_actions_mask(player))
                  raise Exception("Illegal move:", move, "not available" )
 
         # Check for a win after the move
