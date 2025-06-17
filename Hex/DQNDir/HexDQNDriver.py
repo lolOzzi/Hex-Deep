@@ -149,7 +149,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                 if last_state_by_player[loser] is not None:
                     loser_state  = last_state_by_player[loser]
                     loser_action = last_action_by_player[loser]
-                    loser_reward = env.LOSS_PENALTY + playerTurnNum[player]*MOVE_VALUE 
+                    loser_reward = env.LOSS_PENALTY + playerTurnNum[loser]*MOVE_VALUE 
                     agent.update_replay_memory(
                         (loser_state, loser_action, loser_reward, cp_state_pre_action, True)
                     )
