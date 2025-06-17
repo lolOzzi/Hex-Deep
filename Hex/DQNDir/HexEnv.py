@@ -30,28 +30,16 @@ class HexEnv:
     def step(self, action, player):
         """
         Takes an integer action from the agent and applies it to the game.
-        Action can be a board move (0-24) or a swap action (25).
+        Action can be a board move (0-24)
         """
-        is_swap = (action == self.SWAP_ACTION)
-        is_swap_available = (player == 2 and self.hex.swap and not self.hex.first_turn)
+        row, col = divmod(action, self.SIZE)
+        # Player 2's board is transposed, so we must un-transpose the move.
+        move = (col, row) if player == 2 else (row, col)
 
-        # Case 1: Agent chose to swap
-        if is_swap:
-            if is_swap_available:
-                self.hex.placeMove(pos=None, player=player, is_swap_action=True)
-            else:
-                 raise Exception("Illegal move: Swap not available")
-        
-        # Case 2: Agent chose to place a piece
+        if move in self.hex.actionspace or move == self.hex.first_move_pos:
+            self.hex.placeMove(pos=move, player=player)
         else:
-            row, col = divmod(action, self.SIZE)
-            # Player 2's board is transposed, so we must un-transpose the move.
-            move = (col, row) if player == 2 else (row, col)
-
-            if move in self.hex.actionspace or move == self.hex.first_move_pos:
-                self.hex.placeMove(pos=move, player=player)
-            else:
-                 raise Exception("Illegal move:", move, "not available" )
+                raise Exception("Illegal move:", move, "not available" )
 
         # Check for a win after the move
         if self.hex.checkWin(player):
