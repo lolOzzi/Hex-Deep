@@ -130,8 +130,9 @@ class DQNAgent:
 
             if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
                 print("It is a lossscaleOptimizer")
+                is_weights_cast = tf.cast(is_weights, dtype=scaled_loss.dtype)
                 scaled_loss = self.model.optimizer.scale_loss(element_wise_loss)
-                weighted_loss = scaled_loss * is_weights
+                weighted_loss = scaled_loss * is_weights_cast
             loss = tf.reduce_mean(weighted_loss)
                         
             
