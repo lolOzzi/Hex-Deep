@@ -127,7 +127,19 @@ class DQNAgent:
 
             element_wise_loss = tf.cast(self.lossfn(target_q_values, predicted_q_values), dtype=compute_dtype)
             weighted_loss = element_wise_loss * is_weights
+
+            if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+                print("DEBUG: Optimizer is", self.model.optimizer) 
+                scaled_loss = self.model.optimizer.get_scaled_loss(element_wise_loss)
+                weighted_loss = scaled_loss * is_weights
             loss = tf.reduce_mean(weighted_loss)
+                        
+            
+        if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
+            scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
+            gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
+        else:
+            gradients = tape.gradient(loss, self.model.trainable_variables)
             
         gradients = tape.gradient(loss, self.model.trainable_variables)
         
