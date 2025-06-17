@@ -59,7 +59,7 @@ loadModel(get_latest_model_file())
 SIZE = 5
 
 EPISODES = 1_000_000
-SELF_PLAY_START_EPISODE = 100_000
+SELF_PLAY_START_EPISODE = 20_000
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = 0
 MOVE_PENALTY_DECAY_VALUE = 0
@@ -81,11 +81,11 @@ SHOW_PREVIEW = False
 ep_rewards = [MIN_REWARD]
 ep_rewards2 = [MIN_REWARD]
 
-# For more repetitive results
-random.seed(2)
-np.random.seed(2)
-tf.random.set_seed(2)
-
+seed = int(time.time()) % (2**32 - 1)
+random.seed(seed)
+np.random.seed(seed)
+tf.random.set_seed(seed)
+print(f"Using random seed: {seed}")
 
 for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
     agent.tensorboard.step = episode
