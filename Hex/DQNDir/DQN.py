@@ -146,7 +146,7 @@ class DQNAgent:
         )[0]
     
     @tf.function
-    def train_step(self, states, actions, rewards, next_states, dones, is_weights):
+    def train_step(self, states, actions, rewards, next_states, dones):
 
         current_states_board, current_states_swap = states
         new_current_states_board, new_current_states_swap = next_states
