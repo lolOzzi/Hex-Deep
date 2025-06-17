@@ -37,7 +37,7 @@ class DQNAgent:
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
-        
+            self.dataset_iterator = self._create_dataset_iterator()
         self.lossfn = tf.keras.losses.MeanSquaredError()
 
     def create_model(self):
