@@ -90,9 +90,9 @@ class HexEnv:
             idx = i * SIZE + j if player == 1 else j * SIZE + i
             mask[idx] = True
 
-        if player == 2 and self.hex.swap and not self.hex.first_turn and self.SWAP_ACTION is not None:
+        if player == 2 and self.hex.swap and not self.hex.first_turn:
                 i, j = self.hex.first_move_pos 
-                idx = i * SIZE + j if player == 1 else j * SIZE + i
+                idx = i * SIZE + j
                 mask[idx] = True
         return mask
 
