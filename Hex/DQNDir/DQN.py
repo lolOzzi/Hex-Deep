@@ -138,7 +138,7 @@ class DQNAgent:
             
         if isinstance(self.model.optimizer, tf.keras.mixed_precision.LossScaleOptimizer):
             scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
-            gradients = self.model.optimizer.get_unscaled_gradients(scaled_gradients)
+            gradients = scaled_gradients
         else:
             gradients = tape.gradient(loss, self.model.trainable_variables)
         
