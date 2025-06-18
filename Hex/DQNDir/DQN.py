@@ -84,7 +84,6 @@ class DQNAgent:
     
     def _replay_generator(self):
         while True:
-            # Wait until the replay buffer is large enough to sample from
             if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
                 time.sleep(0.1)
                 continue
