@@ -33,7 +33,7 @@ class NoisyFactorisedDense(Layer):
         epsilon_in = tf.random.normal(shape=(self.in_features,), dtype=noise_dtype)
         epsilon_out = tf.random.normal(shape=(self.units,), dtype=noise_dtype)
 
-        # Factorised noise, indpendent might have been better, but this is faster
+        # Factorised noise
         f = lambda x: tf.sign(x) * tf.sqrt(tf.abs(x))
         epsilon_w = tf.tensordot(f(epsilon_in), f(epsilon_out), axes=0)
         epsilon_b = f(epsilon_out)
