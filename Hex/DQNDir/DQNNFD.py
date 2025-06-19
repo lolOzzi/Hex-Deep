@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 
-
+@tf.keras.utils.register_keras_serializable()
 class NoisyFactorisedDense(Layer):
     def __init__(self, units, sigma_init=0.5, **kwargs):
         super().__init__(**kwargs)
@@ -43,3 +43,15 @@ class NoisyFactorisedDense(Layer):
         b = self.mu_b + self.sigma_b* epsilon_b
 
         return tf.matmul(inputs, w) + b
+    # Important for serialization: provide get_config
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "units": self.units,
+            "sigma_init": self.sigma_init,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)

@@ -13,7 +13,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-simple_____5.00max____0.05avg____0.00min__1750063309.keras'
+model_file = 'models/5x5-simple_____4.90max____0.10avg____0.00min__1750211228.keras'
 #model_file = None
 
 
@@ -63,7 +63,7 @@ SELF_PLAY_START_EPISODE = 20_000
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = 0
 MOVE_PENALTY_DECAY_VALUE = 0
-MOVE_VALUE = 0.1
+MOVE_VALUE = 0.05
 #MOVE_PENALTY_DECAY_VALUE = 0
 
 MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE

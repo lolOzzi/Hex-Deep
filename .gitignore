@@ -22,3 +22,7 @@ Hex/DQNDir/__pycache__/TB.cpython-312.pyc
 /Hex/DQNDir/logs_old
 /Hex/DQNDir/models_mid
 /Hex/DQNDir/models_old
+/Hex/DQNDir/exported_simple_hex_dqn
+/Hex/DQNDir/test_simple_hex_dqn
+Hex/DQNDir/temp.weights.h5
+Hex/DQNDir/test.keras
