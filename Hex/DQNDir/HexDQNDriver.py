@@ -1,227 +1,135 @@
-from HexEnv import *
-from DQN import *
 import numpy as np
 import tensorflow as tf
-import time
-import random
-from tqdm import tqdm
+from DQNNFD import NoisyFactorisedDense
 import os
-import glob
+import shutil
 
-print("Heres the gpu info", tf.config.list_physical_devices('GPU'))
-env = HexEnv()
-agent = DQNAgent(env)
+# --- Configuration ---
+KERAS_MODEL_PATH = 'models/5x5-simple_____4.90max____4.56avg____0.00min__1750339997.keras'
+EXPORT_DIR = "test_simple_hex_dqn"
 
+# --- Model Definitions ---
 
-model_file = 'models/5x5-simple_____4.90max____0.10avg____0.00min__1750211228.keras'
-#model_file = None
+def create_training_model():
+    """ The original model with custom Noisy layers, used for loading weights. """
+    board_input = tf.keras.layers.Input(shape=(5, 5, 2), name='board_input')
+    swap_input = tf.keras.layers.Input(shape=(1,), name='swap_input')
+    x = tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='local_patterns')(board_input)
+    x = tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='global_patterns')(x)
+    x = tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='pattern_combinations')(x)
+    x_flat = tf.keras.layers.Flatten(name='flatten')(x)
+    concatenated = tf.keras.layers.Concatenate(name='concatenate')([x_flat, swap_input])
+    d = NoisyFactorisedDense(256, name='decision_layer_1')(concatenated)
+    d = tf.keras.layers.ReLU(name='re_lu_1')(d)
+    d = NoisyFactorisedDense(128, name='decision_layer_2')(d)
+    d = tf.keras.layers.ReLU(name='re_lu_2')(d)
+    final_output = tf.keras.layers.Dense(25, activation='linear', name='q_values')(d)
+    return tf.keras.Model(inputs=[board_input, swap_input], outputs=final_output, name="training_model")
 
-
-def get_latest_model_file():
+def create_inference_model():
+    """ 
+    Builds the inference model using a combination of Sequential and Functional APIs
+    to create the cleanest possible graph.
     """
-    Finds the most recently modified .keras model file in the 'models/' directory.
-    """
-    # Create the models directory if it doesn't exist
-    os.makedirs('models', exist_ok=True)
-    
-    # Get a list of all .keras files in the directory
-    list_of_files = glob.glob('models/*.keras') 
-    
-    if not list_of_files:
-        # If no model files are found, return None
-        return None
-    
-    # Find the file with the latest modification time
-    latest_file = max(list_of_files, key=os.path.getmtime)
-    return latest_file
+    # Part 1: Convolutional base using the robust Sequential API
+    conv_base = tf.keras.Sequential(
+        [
+            tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='local_patterns', input_shape=(5, 5, 2)),
+            tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='global_patterns'),
+            tf.keras.layers.Conv2D(128, kernel_size=3, padding='same', activation='relu', name='pattern_combinations'),
+            tf.keras.layers.Flatten(name='flatten')
+        ],
+        name="conv_base"
+    )
 
-def loadModel(model_file_path):
+    # Part 2: Decision head using the robust Sequential API
+    decision_head = tf.keras.Sequential(
+        [
+            tf.keras.layers.Dense(256, name='decision_layer_1'),
+            tf.keras.layers.ReLU(name='re_lu_1'),
+            tf.keras.layers.Dense(128, name='decision_layer_2'),
+            tf.keras.layers.ReLU(name='re_lu_2'),
+            tf.keras.layers.Dense(25, activation='linear', name='q_values')
+        ],
+        name="decision_head"
+    )
 
-    if model_file_path:
-        print(f"Loading model from: {model_file_path}")
+    # Part 3: Combine them using the Functional API
+    board_input = tf.keras.layers.Input(shape=(5, 5, 2), name='board_input')
+    swap_input = tf.keras.layers.Input(shape=(1,), name='swap_input')
+    
+    conv_features = conv_base(board_input)
+    concatenated = tf.keras.layers.Concatenate(name='concatenate')([conv_features, swap_input])
+    final_output = decision_head(concatenated)
+
+    return tf.keras.Model(inputs=[board_input, swap_input], outputs=final_output, name="inference_model")
+
+# --- Main Export Logic ---
+
+# 1. Load the original model to access its weights.
+print("Step 1: Loading original model...")
+loaded_model = tf.keras.models.load_model(
+    KERAS_MODEL_PATH,
+    custom_objects={'NoisyFactorisedDense': NoisyFactorisedDense}
+)
+print("Original model loaded.")
+
+# 2. Create the clean, inference-only model.
+print("\nStep 2: Creating clean inference model...")
+inference_model = create_inference_model()
+print("Inference model created.")
+
+# 3. Manually and explicitly copy weights layer by layer from the loaded model.
+print("\nStep 3: Manually copying weights by layer name...")
+for layer_loaded in loaded_model.layers:
+    if not layer_loaded.get_weights():
+        continue
+    try:
+        # Find the identically named layer in our new model
+        layer_inference = inference_model.get_layer(name=layer_loaded.name)
+        if isinstance(layer_loaded, NoisyFactorisedDense):
+            print(f"  - Converting weights for Noisy layer: {layer_loaded.name}")
+            mean_weights = layer_loaded.get_weights()[:2]
+            layer_inference.set_weights(mean_weights)
+        else:
+            print(f"  - Copying weights for standard layer: {layer_loaded.name}")
+            layer_inference.set_weights(layer_loaded.get_weights())
+    except ValueError:
+         # This will find layers in sub-models (like conv_base and decision_head)
         try:
-            agent.model = tf.keras.models.load_model(
-                model_file_path,
-                custom_objects={'NoisyFactorisedDense': NoisyFactorisedDense}
-            )
-            agent.target_model.set_weights(agent.model.get_weights())
-            print("Model loaded successfully.")
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Starting from scratch.")
-    else:
-        print("No model file found, starting from scratch.")
-
-
-loadModel(get_latest_model_file())
-
-# Environment settings
-SIZE = 5
-
-EPISODES = 10_000_000
-SELF_PLAY_START_EPISODE = 20_000
-MOVE_PENALTY_DECAY_EPISODE = 0
-MOVE_PENALTY_BASE_VALUE = 0
-MOVE_PENALTY_DECAY_VALUE = 0
-MOVE_VALUE = 0.05
-#MOVE_PENALTY_DECAY_VALUE = 0
-
-MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE
-
-# Exploration settings
-epsilon = 1  # not a constant, going to be decayed
-EPSILON_DECAY = 0.99975
-MIN_EPSILON = 0.001
-
-#  Stats settings
-AGGREGATE_STATS_EVERY = 100  # episodes
-MODEL_SAVE_EVERY = 500
-SHOW_PREVIEW = False
-
-ep_rewards = [MIN_REWARD]
-ep_rewards2 = [MIN_REWARD]
-
-seed = int(time.time()) % (2**32 - 1)
-random.seed(seed)
-np.random.seed(seed)
-tf.random.set_seed(seed)
-print(f"Using random seed: {seed}")
-
-for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
-    agent.tensorboard.step = episode
-    agent.tensorboard2.step = episode
-
-    episode_reward = 0
-    episode_reward2 = 0
-    step = 1
-    playerTurnNum = {1: 0, 2: 0}
-
-    done = False
-        # Check if self-play mode should be enabled
-    self_play = episode >= SELF_PLAY_START_EPISODE
-    current_state = env.reset() if self_play else env.resetRand()
-
-    last_state_by_player = {1: None, 2: None}
-    last_action_by_player = {1: None, 2: None}
-
-    env.turn_penalty = MOVE_PENALTY_BASE_VALUE \
-                       if episode < MOVE_PENALTY_DECAY_EPISODE \
-                       else MOVE_PENALTY_DECAY_VALUE
-
-    while not done:
-        player = env.player_num
-
-        playerTurnNum[player] = playerTurnNum[player] + 1
-
-        all_q_values = agent.get_qs(current_state)
-
-        valid_actions_mask_np = env.get_valid_actions_mask(player)
-        valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
-        masked_q_values = tf.where(
-            valid_actions_mask_tensor,
-            all_q_values,
-            -np.inf
-        )
-
-        action_tensor = tf.argmax(masked_q_values)
-        action = action_tensor.numpy()
-        
-        op_state_pre_action = env.getObservation(3 - player)
-        cp_state_pre_action = env.getObservation(player)
-        #  Execute action and process results
-        if self_play:
-            new_state, reward, done = env.step(action, player)
-
-            op_state_post_action = env.getObservation(3-player)
-
-            # Store state/action for potential loser punishment
-            last_state_by_player[player]  = current_state
-            last_action_by_player[player] = action
-
-
-            # If the game ended, punish the loser
-            if done:
-                reward -= MOVE_VALUE
-                agent.update_replay_memory((current_state, action, reward, op_state_post_action, done))
-                agent.train(done, step)
-                # Now identify the loser and inject a terminal loss for their last move.
-                loser = 3 - player
-                if last_state_by_player[loser] is not None:
-                    loser_state  = last_state_by_player[loser]
-                    loser_action = last_action_by_player[loser]
-                    loser_reward = env.LOSS_PENALTY + playerTurnNum[loser]*MOVE_VALUE 
-                    agent.update_replay_memory(
-                        (loser_state, loser_action, loser_reward, cp_state_pre_action, True)
-                    )
-                    agent.train(True, step)
-            else:
-                agent.update_replay_memory((current_state, action, reward, op_state_post_action, done))
-                agent.train(done, step)
-            
-            if player == 1:  
-                episode_reward += reward
-            else:
-                episode_reward2 += reward
-
-            
-            # Switch player and update state for the next turn
-            env.player_num = 3 - player
-            current_state = env.getObservation(env.player_num)
-            step += 1
-
-        else: # Play against a random opponent
-            # Agent's move
-            new_state, reward, done = env.step(action, env.player_num)
-            episode_reward += reward
-            
-            if done: # Agent won 
-                reward -= playerTurnNum[player]*MOVE_VALUE 
-                agent.update_replay_memory((current_state, action, reward, new_state, done))
-                agent.train(done, step)
-                current_state = new_state
-            else: # Game continues, random opponent's turn
-                opponent_action_pos = env.calc_op_move()
-                # We need to get the resulting state after the opponent moves
-                env.hex.placeMove(opponent_action_pos, 3 - env.player_num)
-                final_state = env.getObservation(env.player_num)
-                final_state_op = env.getObservation(3 - env.player_num)
-                if env.hex.checkWin(3 - env.player_num):
-                    done = True
-                    reward = env.LOSS_PENALTY + playerTurnNum[player]*MOVE_VALUE # Agent lost
-                    agent.update_replay_memory((current_state, action, reward, final_state_op, True))
+            layer_inference = inference_model.get_layer('conv_base').get_layer(layer_loaded.name)
+            layer_inference.set_weights(layer_loaded.get_weights())
+            print(f"  - Copying weights for nested standard layer: {layer_loaded.name}")
+        except ValueError:
+            try:
+                layer_inference = inference_model.get_layer('decision_head').get_layer(layer_loaded.name)
+                if isinstance(layer_loaded, NoisyFactorisedDense):
+                     print(f"  - Converting weights for nested Noisy layer: {layer_loaded.name}")
+                     mean_weights = layer_loaded.get_weights()[:2]
+                     layer_inference.set_weights(mean_weights)
                 else:
-                    agent.update_replay_memory((current_state, action, reward, final_state_op, False))
-                # The 'new_state' for the agent's transition is after the opponent has moved
+                    print(f"  - Copying weights for nested standard layer: {layer_loaded.name}")
+                    layer_inference.set_weights(layer_loaded.get_weights())
+            except ValueError:
+                 print(f"  - WARNING: Layer '{layer_loaded.name}' could not be found in inference model.")
+print("Weight copy complete.")
 
-                agent.train(done, step)
-                current_state = final_state
+# 4. Define the serving signature and save the INFERENCE model.
+@tf.function(input_signature=[
+    tf.TensorSpec(shape=[None, 5, 5, 2], dtype=tf.float32, name="board_input"),
+    tf.TensorSpec(shape=[None, 1],       dtype=tf.float32, name="swap_input")
+])
+def serve_fn(board_input, swap_input):
+    return {"q_values": inference_model([board_input, swap_input], training=False)}
 
-            step += 1
+print(f"\nStep 4: Exporting the final INFERENCE model to {EXPORT_DIR}...")
+if os.path.exists(EXPORT_DIR):
+    shutil.rmtree(EXPORT_DIR)
 
+tf.saved_model.save(
+    inference_model,
+    EXPORT_DIR,
+    signatures={"serving_default": serve_fn}
+)
 
-    
-     # Append episode reward to a list and log stats (every given number of episodes)
-    ep_rewards.append(episode_reward)
-    ep_rewards2.append(episode_reward2)
-    if not episode % AGGREGATE_STATS_EVERY or episode == 1:
-        average_reward = sum(ep_rewards[-AGGREGATE_STATS_EVERY:])/len(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        min_reward = min(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        max_reward = max(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward, epsilon=epsilon)
-
-        average_reward2 = sum(ep_rewards2[-AGGREGATE_STATS_EVERY:])/len(ep_rewards2[-AGGREGATE_STATS_EVERY:])
-        min_reward2 = min(ep_rewards2[-AGGREGATE_STATS_EVERY:])
-        max_reward2 = max(ep_rewards2[-AGGREGATE_STATS_EVERY:])
-        agent.tensorboard2.update_stats(reward_avg=average_reward2, reward_min=min_reward2, reward_max=max_reward2, epsilon=epsilon)
-        # Save model, but only when min reward is greater or equal a set value
-    if not episode % MODEL_SAVE_EVERY:
-        agent.model.save(f'models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.keras')
-
-    # Decay epsilon
-    if epsilon > MIN_EPSILON:
-        epsilon *= EPSILON_DECAY
-        epsilon = max(MIN_EPSILON, epsilon)
-
-
-
-
+print("\nModel exported successfully! You may now run the Java application.")

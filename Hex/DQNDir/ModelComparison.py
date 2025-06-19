@@ -6,8 +6,8 @@ from DQN import DQNAgent
 
 # --- Configuration ---
 # 1. Provide the paths to your two trained models.
-MODEL_1_PATH = "models/5x5-simple-PER_____0.00max____0.00avg____0.00min__1750150809.keras"  # Player 1 Model
-MODEL_2_PATH = "models/5x5-simple-PER_____0.00max____0.00avg____0.00min__1750150809.keras" # Player 2 Model
+MODEL_1_PATH = "models/5x5-simple_____4.90max____4.56avg____0.00min__1750339997.keras"  # Player 1 Model
+MODEL_2_PATH = "models/5x5-simple_____4.90max____4.56avg____0.00min__1750339997.keras" # Player 2 Model
 
 # 2. Set to True to see the graphical representation of the board after each move.
 SHOW_BOARD_VISUALIZATION = True
@@ -143,7 +143,7 @@ def run_human_vs_ai_match(ai_model_path, human_player_num):
             print(f"\nYour turn (Player {player_num}).")
             move_tuple = get_human_move(env)
             # Convert the human's (row, col) tuple to a flat integer action
-            action = move_tuple[0] * env.SIZE + move_tuple[1]
+            action = move_tuple[1] * env.SIZE + move_tuple[0]
         else:
             print(f"\nAI's turn (Player {ai_player_num})...")
             all_q_values = ai_agent.get_qs(current_state) 

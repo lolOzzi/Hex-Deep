@@ -26,3 +26,10 @@ Hex/DQNDir/__pycache__/TB.cpython-312.pyc
 /Hex/DQNDir/test_simple_hex_dqn
 Hex/DQNDir/temp.weights.h5
 Hex/DQNDir/test.keras
+Hex/DQNDir/exported_inference_model_for_java/fingerprint.pb
+/Hex/DQNDir/djl_hex_model
+/Hex/DQNDir/exported_inference_model_for_java
+/Hex/DQNDir/frozen_model
+Hex/DQNDir/djl_weights.txt
+Hex/DQNDir/djl_weights.npz
+Hex/DQNDir/weights.txt
