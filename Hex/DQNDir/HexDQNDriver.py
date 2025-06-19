@@ -58,7 +58,7 @@ loadModel(get_latest_model_file())
 # Environment settings
 SIZE = 5
 
-EPISODES = 1_000_000
+EPISODES = 10_000_000
 SELF_PLAY_START_EPISODE = 20_000
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = 0
