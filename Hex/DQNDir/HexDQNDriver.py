@@ -57,9 +57,9 @@ loadModel(get_latest_model_file())
 
 # Environment settings
 SIZE = 5
-
 EPISODES = 10_000_000
 SELF_PLAY_START_EPISODE = 20_000
+# Different Penalty Systems we experiented with
 MOVE_PENALTY_DECAY_EPISODE = 0
 MOVE_PENALTY_BASE_VALUE = 0
 MOVE_PENALTY_DECAY_VALUE = 0
@@ -68,10 +68,6 @@ MOVE_VALUE = 0.01
 
 MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE
 
-# Exploration settings
-epsilon = 1  # not a constant, going to be decayed
-EPSILON_DECAY = 0.99975
-MIN_EPSILON = 0.001
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 100  # episodes
@@ -81,12 +77,14 @@ SHOW_PREVIEW = False
 ep_rewards = [MIN_REWARD]
 ep_rewards2 = [MIN_REWARD]
 
+# Seed setting (sometimes set to specefic value for testing)
 seed = int(time.time()) % (2**32 - 1)
 random.seed(seed)
 np.random.seed(seed)
 tf.random.set_seed(seed)
 print(f"Using random seed: {seed}")
 
+# The main training loop
 for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
     agent.tensorboard.step = episode
     agent.tensorboard2.step = episode
@@ -97,7 +95,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
     playerTurnNum = {1: 0, 2: 0}
 
     done = False
-        # Check if self-play mode should be enabled
+    # Check if self-play mode should be enabled
     self_play = episode >= SELF_PLAY_START_EPISODE
     current_state = env.reset() if self_play else env.resetRand()
 
@@ -107,7 +105,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
     env.turn_penalty = MOVE_PENALTY_BASE_VALUE \
                        if episode < MOVE_PENALTY_DECAY_EPISODE \
                        else MOVE_PENALTY_DECAY_VALUE
-
+    #While a game is still going on
     while not done:
         player = env.player_num
 
@@ -115,6 +113,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
 
         all_q_values = agent.get_qs(current_state)
 
+        # Make sure only valid actions are picked
         valid_actions_mask_np = env.get_valid_actions_mask(player)
         valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)
         masked_q_values = tf.where(
@@ -126,6 +125,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         action_tensor = tf.argmax(masked_q_values)
         action = action_tensor.numpy()
         
+        # op = opponnent, cp = current player
         op_state_pre_action = env.getObservation(3 - player)
         cp_state_pre_action = env.getObservation(player)
         #  Execute action and process results
@@ -191,7 +191,6 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
                     agent.update_replay_memory((current_state, action, reward, final_state_op, True))
                 else:
                     agent.update_replay_memory((current_state, action, reward, final_state_op, False))
-                # The 'new_state' for the agent's transition is after the opponent has moved
 
                 agent.train(done, step)
                 current_state = final_state
@@ -213,14 +212,9 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         min_reward2 = min(ep_rewards2[-AGGREGATE_STATS_EVERY:])
         max_reward2 = max(ep_rewards2[-AGGREGATE_STATS_EVERY:])
         agent.tensorboard2.update_stats(reward_avg=average_reward2, reward_min=min_reward2, reward_max=max_reward2, epsilon=epsilon)
-        # Save model, but only when min reward is greater or equal a set value
+        # Save model every MODEL_SAVE_EVERY episodes
     if not episode % MODEL_SAVE_EVERY:
         agent.model.save(f'models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.keras')
-
-    # Decay epsilon
-    if epsilon > MIN_EPSILON:
-        epsilon *= EPSILON_DECAY
-        epsilon = max(MIN_EPSILON, epsilon)
 
 
 

@@ -25,15 +25,17 @@ class DQNAgent:
     def __init__(self, env, train=True):
         self.env = env
         self.randomGen = np.random.default_rng(2)
+        # Configure optimisations if a gpu is availible 
         if (len(tf.config.experimental.list_physical_devices('GPU')) > 0):
             configure_gpu_optimizations()
         # Primary Model, gets trained every step
         self.model = self.create_model()
-        # Target Model, we .predict this one
+        # Target Model, we .predict this one (DDQN)
         self.target_model = self.create_model()
         self.target_model.set_weights(self.model.get_weights())
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
         self.target_update_counter = 0
+        # Only save logs if we are training
         if train:
             self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
             self.tensorboard2 = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}Player2-{int(time.time())}")
@@ -63,7 +65,7 @@ class DQNAgent:
         # Flatten for decision making
         x_flat = Flatten()(x)
 
-        # --- Concatenation ---
+        # Concatenation
         concatenated = Concatenate()([x_flat, swap_input])
         
         # Decision layers
@@ -109,7 +111,7 @@ class DQNAgent:
             yield (current_states_board, current_states_swap), actions, rewards, (next_states_board, next_states_swap), dones
 
     def _create_dataset_iterator(self):
-       # The shapes are for a BATCH of data.
+       # The shapes are for a batch of data.
         dataset = tf.data.Dataset.from_generator(
             self._replay_generator,
             output_signature=(
