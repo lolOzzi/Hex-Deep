@@ -12,7 +12,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-jupiter_____5.00max____3.05avg____0.00min__1750190989.keras'
+model_file = 'models/5x5-jupiter_____5.00max____2.50avg____0.00min__1750414300.keras'
 #model_file = None
 
 
@@ -73,9 +73,7 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
 
     while not done:
         player = env.player_num
-        print("cs", current_state)
         all_q_values = agent.get_qs(current_state)
-        print("qvals", all_q_values)
         
         valid_actions_mask_np = env.get_valid_actions_mask(player)
         valid_actions_mask_tensor = tf.convert_to_tensor(valid_actions_mask_np, dtype=tf.bool)

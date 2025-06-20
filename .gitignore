@@ -30,3 +30,4 @@ Hex/DQNDir/temp.weights.h5
 /Hex/DQNDir/exported_inference_model_for_java
 /Hex/DQNDir/djl_hex_model
 Hex/DQNDir/djl_weights.npz
+/logs
