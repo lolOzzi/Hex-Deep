@@ -33,3 +33,4 @@ Hex/DQNDir/exported_inference_model_for_java/fingerprint.pb
 Hex/DQNDir/djl_weights.txt
 Hex/DQNDir/djl_weights.npz
 Hex/DQNDir/weights.txt
+/logs
