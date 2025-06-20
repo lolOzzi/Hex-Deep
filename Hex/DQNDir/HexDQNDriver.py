@@ -206,12 +206,12 @@ for episode in tqdm(range(1, EPISODES+1), ascii=True, unit="episode"):
         average_reward = sum(ep_rewards[-AGGREGATE_STATS_EVERY:])/len(ep_rewards[-AGGREGATE_STATS_EVERY:])
         min_reward = min(ep_rewards[-AGGREGATE_STATS_EVERY:])
         max_reward = max(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward, epsilon=epsilon)
+        agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward, epsilon=0)
 
         average_reward2 = sum(ep_rewards2[-AGGREGATE_STATS_EVERY:])/len(ep_rewards2[-AGGREGATE_STATS_EVERY:])
         min_reward2 = min(ep_rewards2[-AGGREGATE_STATS_EVERY:])
         max_reward2 = max(ep_rewards2[-AGGREGATE_STATS_EVERY:])
-        agent.tensorboard2.update_stats(reward_avg=average_reward2, reward_min=min_reward2, reward_max=max_reward2, epsilon=epsilon)
+        agent.tensorboard2.update_stats(reward_avg=average_reward2, reward_min=min_reward2, reward_max=max_reward2, epsilon=0)
         # Save model every MODEL_SAVE_EVERY episodes
     if not episode % MODEL_SAVE_EVERY:
         agent.model.save(f'models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.keras')
