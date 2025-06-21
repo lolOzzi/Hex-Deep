@@ -9,7 +9,6 @@ from collections import deque
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input
 from DQNNFD import *
-from PER import PERBuffer
 
 REPLAY_MEMORY_SIZE = 50_000
 MODEL_NAME = "5x5-simple"
