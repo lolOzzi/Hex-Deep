@@ -13,7 +13,7 @@ env = HexEnv()
 agent = DQNAgent(env)
 
 
-model_file = 'models/5x5-simple_____4.95max____3.12avg____0.00min__1750427598.keras'
+model_file = 'models/5x5-simple_____5.00max____0.05avg____0.00min__1750537146.keras'
 #model_file = None
 
 
@@ -53,7 +53,7 @@ def loadModel(model_file_path):
         print("No model file found, starting from scratch.")
 
 
-loadModel(get_latest_model_file())
+loadModel(model_file)
 
 # Environment settings
 SIZE = 5
@@ -71,7 +71,7 @@ MIN_REWARD = -5 - (SIZE*SIZE // 2) * MOVE_PENALTY_BASE_VALUE
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 100  # episodes
-MODEL_SAVE_EVERY = 500
+MODEL_SAVE_EVERY = 2000
 SHOW_PREVIEW = False
 
 ep_rewards = [MIN_REWARD]
